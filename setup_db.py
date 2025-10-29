@@ -91,7 +91,7 @@ def create_measurement_database(db_name="measurement_data.db"):
                 MC_Sample_ID    INTEGER NOT NULL,
                 Satellite_num   INTEGER NOT NULL,
                 Pseudorange     REAL    NOT NULL,
-
+                Is_Outlier      INTEGER NULL,
 
                 PRIMARY KEY (MC_Sample_ID, Satellite_num),
                 

@@ -10,7 +10,7 @@ if __name__ == "__main__":
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
     
-    samples=10000
+    samples=40000
     try:
         # Do we want to create a new MC run or use an old one?
         new_mc_run_id = False
@@ -56,16 +56,19 @@ if __name__ == "__main__":
         selected_snapshot_ids = [int(sid) for sid in selected_snapshot_ids]
         # Now to get the data needed to generate measurements
         noiseless_data = mdu.noiseless_model(cursor, selected_snapshot_ids)
-        to_database_list = 
+        to_database_list = []
         # Take each sample and add noise/outliers to generate measurements
+        count = 0
         for snapshot_id,noiseless_pseudoranges in zip(selected_snapshot_ids,noiseless_data):
             outliers = np.random.rand(len(noiseless_pseudoranges)) < outlier_fraction
             noise = np.random.normal(0, noise_std_dev, size=len(noiseless_pseudoranges))
             noise[outliers] = np.random.normal(0, outlier_sd, size=np.sum(outliers))
             noisy_pseudoranges = noiseless_pseudoranges + noise
             # Store the generated measurements in the database
-            to_database_list.append((snapshot_id, noisy_pseudoranges, outliers))
-        
+            to_database_list.append({'Snapshot_ID': snapshot_id,
+                                      'pseudoranges': noisy_pseudoranges,
+                                      'is_outlier': outliers})
+
         mdu.add_MC_samples(conn, mc_run_id, to_database_list)
     except Exception as e:
         print(f"Error occurred: {e}")

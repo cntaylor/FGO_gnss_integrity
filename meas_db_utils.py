@@ -160,13 +160,17 @@ def add_MC_samples(conn, mc_run_id, data_list):
     For each entry in data_list:
     1. Validates the number of pseudoranges against the number of satellites in Satellite_Locations.
     2. Inserts into MC_Samples to get a new MC_Sample_ID.
-    3. Inserts pseudorange measurements into the Measurements table.
+    3. Inserts pseudorange measurements (and other data if in the data_list) into the Measurements table.
 
     Args:
         conn (sqlite3.Connection): An active database connection object.
         mc_run_id (int): The ID of the Monte Carlo run (must exist in MC_Runs).
-        data_list (list): A list of tuples: [(Snapshot_ID, pseudorange_array), ...].
-                          pseudorange_array must be a 1D numpy array.
+        data_list (list): A list of dictionaries.  Each dictionary will have:
+            Required:
+                - 'Snapshot_ID': The ID of the snapshot (must exist in Snapshots).
+                - 'pseudoranges': A 1D numpy array of pseudorange measurements.
+            Optional:
+                - 'is_outlier': A 1D numpy array of integers (0 or 1) indicating outliers. (Same length as pseudoranges)
 
     Raises:
         ValueError: If a pseudorange array size does not match the known satellite count.
@@ -178,7 +182,7 @@ def add_MC_samples(conn, mc_run_id, data_list):
     try:
         # --- 1. Pre-fetch Satellite Counts ---
         # Get the expected number of satellites for every unique Snapshot_ID in the input list.
-        snapshot_ids = [data[0] for data in data_list]
+        snapshot_ids = [data['Snapshot_ID'] for data in data_list]
         unique_ids = list(set(snapshot_ids))
         
         if not unique_ids:
@@ -199,14 +203,17 @@ def add_MC_samples(conn, mc_run_id, data_list):
         
         # --- 2. Process and Insert Data Transaction by Transaction ---
         
-        for snapshot_id, pseudorange_array in data_list:
+        for snapshot_dict in data_list:
             # Begin a transaction for this snapshot (crucial for integrity check)
             cursor.execute("BEGIN TRANSACTION")
-
-            # A. VALIDATION CHECK
+            
+            snapshot_id = snapshot_dict['Snapshot_ID']
+            pseudorange_array = snapshot_dict['pseudoranges']
+            # A. VALIDATION CHECKS
             expected_count = sat_counts.get(snapshot_id)
             actual_count = pseudorange_array.size
-            
+            outlier_array_valid = False
+
             if expected_count is None:
                 # This could mean the Snapshot_ID doesn't exist or has no satellites
                 raise ValueError(f"Snapshot_ID {snapshot_id} not found or has no satellite data in Satellite_Locations.")
@@ -217,6 +224,15 @@ def add_MC_samples(conn, mc_run_id, data_list):
                     f"Pseudorange array for Snapshot_ID {snapshot_id} is incorrect size. "
                     f"Expected {expected_count} satellites, got {actual_count} measurements."
                 )
+            
+            if 'is_outlier' in snapshot_dict:
+                is_outlier_array = snapshot_dict['is_outlier']
+                if is_outlier_array.size != expected_count:
+                    raise ValueError(
+                        f"Is_Outlier array for Snapshot_ID {snapshot_id} is incorrect size. "
+                        f"Expected {expected_count}, got {is_outlier_array.size}."
+                    )
+                outlier_array_valid = True
 
             # B. INSERT INTO MC_SAMPLES
             cursor.execute("""
@@ -235,15 +251,21 @@ def add_MC_samples(conn, mc_run_id, data_list):
             # We create a list of tuples: [(MC_Sample_ID, Satellite_num, Pseudorange), ...]
 
             # Assuming satellite numbers start at 0 and increment sequentially up to expected_count
-            measurement_data = [
-                (new_mc_sample_id, sat_num, prange)
-                for sat_num, prange in enumerate(pseudorange_array)
-            ]
+            if outlier_array_valid:
+                measurement_data = [
+                    (new_mc_sample_id, sat_num, prange, is_outlier)
+                    for sat_num, (prange, is_outlier) in enumerate(zip(pseudorange_array, is_outlier_array))
+                ]
+            else:
+                measurement_data = [
+                    (new_mc_sample_id, sat_num, prange, None)
+                    for sat_num, prange in enumerate(pseudorange_array)
+                ]
 
             # D. INSERT INTO MEASUREMENTS (using executemany for speed)
             cursor.executemany("""
-                INSERT INTO Measurements (MC_Sample_ID, Satellite_num, Pseudorange)
-                VALUES (?, ?, ?)
+                INSERT INTO Measurements (MC_Sample_ID, Satellite_num, Pseudorange, Is_Outlier)
+                VALUES (?, ?, ?, ?)
             """, measurement_data)
             
             # Commit the single transaction after all insertions succeed

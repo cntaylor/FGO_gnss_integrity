@@ -47,12 +47,17 @@ try:
             else:
                 print("invalid line in GT")
     conn.commit()
-    with open(input_filename,'r') as file:
+    print('Created snapshots from ground truth data.')
+    with open(input_filename,'r') as file:       
         sat_num = 0
         snapshot_ID = None # So that it triggers the "new MC sample" flag below
         sample_ID = None
         curr_time= 0 
+        line_counter = 0
         for line in file:
+            line_counter += 1
+            if line_counter % 100 == 0:
+                print(f"processing line {line_counter} of measurements", end='\r', flush=True)
             parts = line.split()
             if len(parts) >= 7 and parts[0] == 'pseudorange3':
                 try:
