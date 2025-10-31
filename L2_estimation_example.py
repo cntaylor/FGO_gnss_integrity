@@ -158,7 +158,7 @@ def validate_estimation(cursor, run_id, dataset_name):
 # --- MAIN EXECUTION BLOCK (Conceptual) ---
 
 if __name__ == '__main__':
-    DB_FILE = "chemnitz_data.db"
+    DB_FILE = "meas_data.db"
     
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -166,7 +166,7 @@ if __name__ == '__main__':
 
         # The parameters requested by the user:
         MC_RUN_ID = 1      # Assuming 1 is your real data or target run
-        DATASET = 'Chemnitz'
+        DATASET = 'Berlin_Potsdamer'  # Example dataset name
 
         validate_estimation(cursor, MC_RUN_ID, DATASET)
 
