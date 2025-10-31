@@ -1,0 +1,9 @@
+*.txt
+.vscode/
+.venv
+__pycache__/
+.python-version
+*.pyc
+*.db
+!meas_data.db
+uv.lock
