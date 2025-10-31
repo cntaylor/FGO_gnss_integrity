@@ -126,6 +126,48 @@ def create_measurement_database(db_name="measurement_data.db"):
             END;
         """)
 
+        store_method_results = True
+        if store_method_results:
+            # --- 6. METHODS TABLE ---
+            # Stores the different estimation methods used.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Estimation_Methods (
+                    Method_ID       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Method_Name     TEXT    NOT NULL,
+                    Parameters_JSON TEXT    -- JSON string of the parameters
+                );
+            """)
+            print("Table 'Estimation_Methods' created.")
+
+            # --- 7. ESTIMATION RESULTS TABLE ---
+            # Stores the results of applying estimation methods to MC samples.
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Estimation_Results (
+                    -- Primary Key Columns
+                    MC_Sample_ID  INTEGER NOT NULL,
+                    Method_ID     INTEGER NOT NULL,
+
+                    -- Required Data (3-element numpy array stored as a BLOB)
+                    Error    BLOB    NOT NULL, -- X,y,z in NED about truth error = estimated - truth
+
+                    -- Optional Data (BLOBs and TEXT)
+                    Sat_Outliers  BLOB    NULL,          -- For numpy array of booleans, length of satellites for MC_sample
+                    Covariance_Blob BLOB    NULL,          -- For 3x3 numpy array, NED covariance in meters
+                    ARAIM_Results TEXT    NULL,          -- For JSON string
+
+                    -- Define the Composite Primary Key
+                    PRIMARY KEY (MC_Sample_ID, Method_ID)
+                           
+                    -- Foreign Keys
+                    FOREIGN KEY (MC_Sample_ID)
+                        REFERENCES MC_Samples (MC_Sample_ID),
+                    FOREIGN KEY (Method_ID)
+                        REFERENCES Estimation_Methods (Method_ID)
+                );
+            """)
+            print("Table 'Estimation_Results' created.")
+
         # Commit all changes and close the connection
         conn.commit()
         print("Database creation complete and changes saved.")
