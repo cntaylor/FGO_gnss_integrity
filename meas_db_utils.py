@@ -299,7 +299,7 @@ def get_MC_sample_ids (cursor, MC_run_ID, dataset_name=None):
                                       those linked to this Dataset.
 
     Returns:
-        list: A list of tuples, where each tuple contains a single MC_Sample_ID.
+        list: A list of MC_Sample_IDs
     '''
     
     # Base SQL query: Select the Sample ID from the MC_Samples table
@@ -328,9 +328,9 @@ def get_MC_sample_ids (cursor, MC_run_ID, dataset_name=None):
     sql_query += " ORDER BY MCS.MC_Sample_ID ASC"
 
     try:
-        cursor.execute(sql_query, tuple(parameters))
-        return cursor.fetchall()
-    
+        list_of_tuples = cursor.execute(sql_query, tuple(parameters)).fetchall()
+        return [t[0] for t in list_of_tuples]
+
     except sqlite3.Error as e:
         print(f"An error occurred while retrieving MC Sample IDs: {e}")
         return []

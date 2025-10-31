@@ -13,14 +13,12 @@ def validate_estimation(cursor, run_id, dataset_name):
 
     # 1. Get MC_Sample_IDs
     # Assumes MC_run_ID=1 is the 'real data' run as specified.
-    sample_id_tuples = get_MC_sample_ids(cursor, run_id, dataset_name=dataset_name)
-    
-    if not sample_id_tuples:
+    sample_ids = get_MC_sample_ids(cursor, run_id, dataset_name=dataset_name)
+
+    if not sample_ids:
         print("No MC samples found for the specified run and dataset.")
         return
 
-    # Flatten the list of tuples into a list of IDs
-    sample_ids = [s[0] for s in sample_id_tuples]
     print(f"Found {len(sample_ids)} unique MC samples.")
 
     to_process = sample_ids # Can cut it down for debugging here if wanted
