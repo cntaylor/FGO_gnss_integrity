@@ -27,6 +27,7 @@ def validate_estimation(cursor, run_id, dataset_name):
     # 2. Get Measurements and Truth Data
     try:
         # get_measurements returns a list of Nx4 NumPy arrays
+        # each entry in the numpy array has [pseudorange, sat_X, sat_Y, sat_Z]
         measurements_list = get_MC_samples_meas(cursor, to_process) 
         
         # get_MC_samples_truth returns a list of 3-element NumPy arrays
