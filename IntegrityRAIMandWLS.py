@@ -2,7 +2,6 @@
 
 """
    This is a python module that implements GNSS integrity-monitoring algorithms.
-
    __author__='Jason N. Gross'
    __email__='Jason.Gross@mail.wvu.edu'
 """
@@ -40,7 +39,6 @@ class KFIntegrityMonitor():
 		""" 
 		    initialize KF Integrity Monitoring Algorithm
 		    The default values for probabilities are taken from:
-
 		    RTCA Special Committee 159, 
 		    "aMinimum Aviation System Performance Standards 
 		    for the Local Area Augmentation System
@@ -108,7 +106,6 @@ class KFIntegrityMonitor():
 		""" 
 		Evaluate current RSOS add to the array that is keeping a running history, 
 		removing elements if necessary 
-
 		inputs:
 			R - KF Measurement Error Covariance
 		"""
@@ -143,7 +140,6 @@ class KFIntegrityMonitor():
 	def residualCovarianceMatrix( H,K,R,Pminus ):
 		"""
 		Calculate the covariance matrix of the Kalman Filter Postfit Residuals 
-
 		inputs:
 			H - GNSS Observation matrix
 			K - Kalman Gain Matrix
@@ -168,9 +164,7 @@ class KFIntegrityMonitor():
 			Determine the alpha parameters of the noncentralized 
 			chi-squared distribution that represents the current time
 			test statistic (i.e. the 'currentRSOS')
-
 			This is eqs. 29-30 of Joerger and Pervan's paper.
-
 		inputs:
 			R - KF Assumed Measurement Error Covariance Matrix 
 		"""
@@ -190,23 +184,20 @@ class MultiHypothesisSolutionSeperation():
 	"""
 		This class is an implementation of the Multiple Hypothesis Solution Seperation
 		RAIM algorithm presented in:
-
 		Blanch, Juan, et al. "An optimized multiple hypothesis RAIM algorithm for vertical 
 		guidance." Proceedings of the 20th International Technical Meeting of the 
 		Satellite Division of The Institute of Navigation (ION GNSS 2007). 2001.
-
 		and More recently:
 		Blanch, Juan, et al. "Baseline advanced RAIM user algorithm and 
 		possible improvements." 
 		Aerospace and Electronic Systems, IEEE Transactions on 51.1 (2015): 713-732
-
 		 all units are in SI- MKS: Meter, Kilogram, Seconds
 	"""
 
 	def __init__(self, printer=True):
 
 		# initialize the printer flag
-		# if the printer flaf is True
+		# if the printer flag is True
 		# a lot of content will be displayed to screen for debugging  purposes
 		self._printer = printer
 		# some convienience vars
@@ -232,6 +223,7 @@ class MultiHypothesisSolutionSeperation():
 		self.__defineGPSUserErrorModelFactor()
 		self.__defineBoundsForDeterminationOfNFaults()
 		self._dx0 = np.matrix( np.zeros(5) )
+		self._dx0wls = np.matrix( np.zeros(5) )
 		
 		
 		
@@ -266,7 +258,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Determine the probability bounds for assessing the max # of faults that must be tested explicilty for 
 		failure
-
 		Eqs. 75-78 of Blanch et al. 2015
 		"""
 
@@ -296,7 +287,6 @@ class MultiHypothesisSolutionSeperation():
 	def __determinePossibleFaultModeCombinations(self, svID):
 		"""
 		Determine all the possible subsets of sats exlcuing possible failures
-
 		start with {n;k} = n!/(k!*(n-k)!) where 
 			n is (number of failure events)
 			k is (number of failure events - NFaultMax)
@@ -396,7 +386,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Determine the upper bound on the probability of multiple faults
 		that are not monitored, this is the upper bount evaluated for r= NFaultMax +1 
-
 		This is Eq. 74 from Blanch et al 2015
 		"""
 		r = self._NFaultMax + 1
@@ -406,7 +395,6 @@ class MultiHypothesisSolutionSeperation():
 	def __probabilityFaultNotMonitored(self):
 		"""
 		Determine the integrity risk of the modes not explicitly monitored.
-
 		This is Equation 11 of Blanch et al 2015
 		"""
 		self._pFaultNotMonitored = self._pMultiFaultNotMonitored + self._pUnobservable
@@ -416,7 +404,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		For given fault mode, zero out elements of the weight matrix that are failed.
 		Eq. 12 of Blanch et al. 2015
-
 		inputs:
 			faultMode - list of satellites and constellations included in this solution mode
 			svID - list of the all in view satellites
@@ -514,7 +501,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Multipath GPS user error estimate dependent on elevation angle
 		Eq 57(2) of Blanch et. al. 2015.
-
 		input:
 			elv - satellite elevation angle from the user's perspective {rad.}
 		output:
@@ -527,7 +513,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Sigma Noise GPS user error based on elevation angle.
 		Eq. 57(3) of Blanch et. al. 2015.
-
 		input:
 			elv - satellite elevation angle from the user's perspective {rad.}
 		output:
@@ -539,7 +524,6 @@ class MultiHypothesisSolutionSeperation():
 	def __gpsUserErrorModel(self, elv):
 		"""
 		GPS Error model, Equation 57(1) of Blanch et. al. 2015.
-
 		input:
 			elv - satellite elevation angle from the user's perspective {rad.}
 		output:
@@ -562,7 +546,6 @@ class MultiHypothesisSolutionSeperation():
 	def __calculateAllInViewCovariance(self, satsXYZ, usrPos, svID):
 		"""
 		Compute the pseudorange covariance matrix for integrity Cint and Cacc
-
 		inputs:
 			satsXYZ - ECEF XYZ list of satellite positions {np.array}(#Sats by 3)
 			usrPos  - ECEF XYZ user positions {np.array}(1 by 3)
@@ -573,7 +556,6 @@ class MultiHypothesisSolutionSeperation():
 				38 - 61 is GLONASS and is slot + 37
 				71 - 106 is GALILEO anf is PRN + 70
 				62 used for unknown GLONASS
-
 		outputs:
 			Cint - diagonal elements of the nominal error model used for integrity
 			Cacc - diagonal elements of the nominal error model used for continuity
@@ -618,6 +600,12 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		return self._usrPos
 
+	def getPosWLS( self ):
+		"""
+			Return user position solution formed by WLS
+		"""
+		return self._usrPosWLS
+
 	def initPos( self, usrPos = [0,0,0] , clockNom = 0.0):
 		"""
 			Initialize the ECEF position of the receiver and the clock bias
@@ -626,19 +614,25 @@ class MultiHypothesisSolutionSeperation():
 		self._usrPos = usrPos 
 		self._clockNom = clockNom
 
+	def initPosWLS( self, usrPosWLS = [0,0,0] , clockNomWLS = 0.0):
+		"""
+			Initialize the ECEF position of the receiver and the clock bias
+		"""
+		
+		self._usrPosWLS = usrPosWLS 
+		self._clockNomWLS = clockNomWLS
+
 
 	def __observationMatrix( self, G, W ):
 		""" 
 			Calculate the observation matrix, H, given the geometry matrix, G
 			
-
 			Input:
 				G - geometry matrix
 				W - based on self._Cint for weighting the solution, 
 				    but calculated elsewhere
 			Output:
 				observation matrix
-
 		"""
 
 		return np.linalg.inv(G.T*W*G)*G.T*W
@@ -646,9 +640,7 @@ class MultiHypothesisSolutionSeperation():
 	def __parityMatVec( self, H, OMC ):
 		""" 
 			Calculate the parity vector and matrix
-
 			From Eq. 19 & 20 of
-
 			Joerger, M., et al. "Integrity Risk and Continuity Risk for Fault Detection 
 			and Exclusion Using Solution Separation ARAIM." Proceedings of the 
 			26th International Technical Meeting of The Satellite Division of the 
@@ -661,10 +653,69 @@ class MultiHypothesisSolutionSeperation():
 		self.residualChiSquareStat = p.T*p
 		return  p, QT.T
 
+	def WLSCheck(self, nSat, satsXYZ, prObs, svID, failSat1, failSat2):
+
+		"Method for doing WLS with direct removal of satellite data without ARAIM"
+
+		# Step #0 apply nominmal to delta
+		count = 0
+		print("In the WLSCheck Method")
+		print(self._dx0wls[0,0:3])
+		print(self._usrPosWLS)
+		enuDeltawls = []
+		enuDeltawls.append( -self._dx0wls[0,0] )
+		enuDeltawls.append( -self._dx0wls[0,1] )
+		enuDeltawls.append( -self._dx0wls[0,2] )
+		self._usrPosWLS = navutils.enu2xyz(enuDeltawls,self._usrPosWLS)
+		print(self._usrPosWLS)
+		self._clockNomWLS = self._clockNomWLS - self._dx0wls[0,1]
+
+		
+		
+
+		# Step #2 All in view solution
+
+		self.__probabilityOfNoFault(svID)
+		self.__probabilityOfFault(svID)
+		G0WLS = self.__determineGeometryMatrix(satsXYZ, self._usrPosWLS,  svID)
+		
+		OMCWLS = self.__determineObservedMinusComputed( prObs, satsXYZ, \
+				self._usrPosWLS, self._clockNomWLS )
+		
+
+		if (failSat1 != None):
+			Gx, OMCx, svIDx, count, satsXYZx = self.SatRemove(failSat1, G0WLS, OMCWLS, svID, count, satsXYZ)
+
+			self.__calculateAllInViewCovariance(satsXYZx, self._usrPosWLS, svIDx)
+			
+
+			enuCov0, W0 = self.__wlsAllInViewMatrix2( Gx, svIDx, OMCx )
+
+		if (failSat2 != None):
+
+			Gx2, OMCx2, svIDx2, count, satsXYZx2 = self.SatRemove(failSat2, Gx, OMCx, svIDx, count, satsXYZx)
+
+			self.__calculateAllInViewCovariance(satsXYZx2, self._usrPosWLS, svIDx2)
+			
+
+			enuCov0, W0 = self.__wlsAllInViewMatrix2( Gx2, svIDx2, OMCx2 )
+
+		else:
+
+			self.__calculateAllInViewCovariance(satsXYZ, self._usrPosWLS, svID)
+			
+
+			enuCov0, W0 = self.__wlsAllInViewMatrix2( G0WLS, svID, OMCWLS )
+
+		print("Completed the WLSCheck method")
+
+		return OMCWLS, G0WLS
+
+		
+
 	def ARAIM(self, nSat,  satsXYZ, prObs, svID):
 		"""
 		Main method for running ARAIM
-
 		inputs:
 			nSat - Number of Sats for this epoch of data
 			satsXYZ - ECEF satellite locations for this epoch
@@ -674,12 +725,22 @@ class MultiHypothesisSolutionSeperation():
 			HPL - horizontal protection limit (m)
 			VPL - vertical protection limit (m)
 		"""
+		
+		count = 0
+		count2 = 0
+		count3 = 0
+		#Time = 10
+		minChi = 0
+		ExcIndex = 0
 		# Step #0 apply nominmal to delta
+		print(self._dx0[0,0:3])
+		print(self._usrPos)
 		enuDelta = []
 		enuDelta.append( -self._dx0[0,0] )
 		enuDelta.append( -self._dx0[0,1] )
 		enuDelta.append( -self._dx0[0,2] )
 		self._usrPos = navutils.enu2xyz(enuDelta,self._usrPos)
+		print(self._usrPos)
 		self._clockNom = self._clockNom - self._dx0[0,1]
 
 		# Step #1 determine Cint and Cacc
@@ -694,7 +755,7 @@ class MultiHypothesisSolutionSeperation():
 		OMC = self.__determineObservedMinusComputed( prObs, satsXYZ, \
 				self._usrPos, self._clockNom )
 		
-		enuCov0, b0, W0 = self.__wlsAllInViewMatrix( G0, svID, OMC )
+		enuCov0, b0, W0 = self.__wlsAllInViewMatrix( G0, svID, OMC, count, ExcIndex )
 
 		# Step #3 Determine Fauilts to be Monitored
 		self.__determineNFaultMax()
@@ -712,29 +773,214 @@ class MultiHypothesisSolutionSeperation():
 		
 		self.numOfModesFailed = [ 0, 0, 0] # re-initialize mode failure counters
 		self.testStats = [ [], [], [] ]
+		
+		
 		for k in range( self._NFaultModes ):
 			
-			faultMode = self._faultModes[k]
+			
+
+			faultMode = self._faultModes[k]	
 			pFaultk[k], faultCompliment= self.__probabilityOfFaultMode(faultMode, svID )
 			dxk[k,:], enuCovk[k,:], enuCovSSk[k,:], bk[k,:] \
 				=self.__evaluateWLSFaultModeSolnSep( G0, W0, OMC, \
-				svID, faultMode )
+				svID, faultMode, count, ExcIndex )
 		
-			status, Tk[k,:] = self.__evalFaultModeThresholdTest( faultMode,\
+			status, Tk[k,:], count2 = self.__evalFaultModeThresholdTest( faultMode,\
 					faultCompliment, \
-					dxk[k,:], enuCovSSk[k,:]) 
+					dxk[k,:], enuCovSSk[k,:], count2) 
 
-		chiStatus = self.__evalChiSquareOfAllInViewSoln(G0, OMC)
+			
+
+			minChi, ExcIndex = self.minSatPick(G0, W0, OMC, svID, faultMode, minChi, ExcIndex )
+
+		#f= open("TestfailuresTestRunT1003.txt", 'a')
+		#f.write(str(self.numOfModesFailed) + '\n')
+		#print(ARAIM.numOfModesFailed)
+		#f.close()
+
 		
-		EPLup,EPLlow  = self.__calculateComponentProtectionLimit( b0, enuCov0, \
-				bk, enuCovk, Tk, pFaultk, 0)
-		NPLup, NPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
-				bk, enuCovk, Tk, pFaultk, 1)
-		VPL, VPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
-				bk, enuCovk, Tk, pFaultk, 2)
-		HPL = np.sqrt( EPLup**2 + NPLup**2 )
+		if (count2 != 0):
 
-		self.__calcuateFFSolnAccuracyAndEMT(G0, W0, Tk, pFaultk)
+			print(self.numOfModesFailed)
+
+			print "Faulted Satellite: %d"%(ExcIndex)
+
+			print "East Fail 1: %d North Fail 1: %d Vertical Fail 1: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2])
+
+			print "Fault Sat Plus Failures: %d %d %d %d"%(ExcIndex,self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2])
+			
+
+			Gx, Wx, OMCx, svIDx, count, satsXYZx = self.SatExc(ExcIndex, G0, W0, OMC, svID, count, satsXYZ)
+
+
+			self.__calculateAllInViewCovariance(satsXYZx, self._usrPos, svIDx)
+			self.__probabilityOfNoFault(svIDx)
+			self.__probabilityOfFault(svIDx)
+
+
+			enuCov0, b0, W0 = self.__wlsAllInViewMatrix( Gx, svIDx, OMCx, count, ExcIndex )
+
+			self.__determineNFaultMax()
+			self.__determinePossibleFaultModeCombinations(svIDx)
+			self.__probabilityOfMultipleFaultNotMonitored()
+			self.__probabilityFaultNotMonitored()
+
+			dxk = np.zeros([self._NFaultModes, 4 ])
+			enuCovk = np.zeros( [ self._NFaultModes , 3 ] ) 
+			enuCovSSk = np.zeros( [ self._NFaultModes , 3 ] )
+			bk = np.zeros( [ self._NFaultModes , 3 ] )
+			Tk = np.zeros( [ self._NFaultModes , 3 ] )
+			pFaultk = np.zeros( self._NFaultModes )
+
+
+			minChi = 0
+			ExcIndex = 0
+			self.numOfModesFailed = [ 0, 0, 0] # re-initialize mode failure counters
+			self.testStats = [ [], [], [] ]
+
+			for k in range( self._NFaultModes ):
+
+				faultMode = self._faultModes[k]
+				
+					
+				pFaultk[k], faultCompliment= self.__probabilityOfFaultMode(faultMode, svIDx )
+				dxk[k,:], enuCovk[k,:], enuCovSSk[k,:], bk[k,:] \
+					=self.__evaluateWLSFaultModeSolnSep( Gx, Wx, OMCx, \
+					svIDx, faultMode, count, ExcIndex )
+	
+				status, Tk[k,:], count3 = self.__evalFaultModeThresholdTest( faultMode,\
+					faultCompliment, \
+					dxk[k,:], enuCovSSk[k,:], count3)
+			
+				minChi, ExcIndex = self.minSatPick(Gx, Wx, OMCx, svIDx, faultMode, minChi, ExcIndex )
+
+			#f= open("TestfailuresTestRunT1003.txt", 'a')
+			#f.write(str('Faulted ') + str(self.numOfModesFailed) + '\n')
+			#print(ARAIM.numOfModesFailed)
+			#f.close()
+
+			#f= open("dx0sTestRunT100.txt", 'a')
+			#f.write(str(self._dx0[0,0:3]) + '\n')
+			#print(ARAIM.numOfModesFailed)
+			#f.close()
+
+			chiStatus = self.__evalChiSquareOfAllInViewSoln(Gx, OMCx, count, ExcIndex)
+ 
+		
+			EPLup,EPLlow  = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+				bk, enuCovk, Tk, pFaultk, 0)
+			NPLup, NPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+				bk, enuCovk, Tk, pFaultk, 1)
+			VPL, VPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+				bk, enuCovk, Tk, pFaultk, 2)
+			HPL = np.sqrt( EPLup**2 + NPLup**2 )
+
+			self.__calcuateFFSolnAccuracyAndEMT(Gx, Wx, Tk, pFaultk, count, ExcIndex)
+			count2 = 0
+			#Time = Time + 10
+
+			if (count3 != 0):
+
+				print(self.numOfModesFailed)
+
+				print "Faulted Satellite: %d"%(ExcIndex)
+
+				print "East Fail 2: %d North Fail 2: %d Vertical Fail 2: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2])
+
+				print "Fault Sat Plus Failures: %d %d %d %d"%(ExcIndex,self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2])
+			
+
+				Gx2, Wx2, OMCx2, svIDx2, count, satsXYZx2 = self.SatExc(ExcIndex, Gx, Wx, OMCx, svIDx, count, satsXYZx)
+
+
+
+				self.__calculateAllInViewCovariance(satsXYZx2, self._usrPos, svIDx2)
+				self.__probabilityOfNoFault(svIDx2)
+				self.__probabilityOfFault(svIDx2)
+
+				enuCov0, b0, W0 = self.__wlsAllInViewMatrix( Gx2, svIDx2, OMCx2, count, ExcIndex )
+
+				self.__determineNFaultMax()
+				self.__determinePossibleFaultModeCombinations(svIDx2)
+				self.__probabilityOfMultipleFaultNotMonitored()
+				self.__probabilityFaultNotMonitored()
+
+				dxk = np.zeros([self._NFaultModes, 4 ])
+				enuCovk = np.zeros( [ self._NFaultModes , 3 ] ) 
+				enuCovSSk = np.zeros( [ self._NFaultModes , 3 ] )
+				bk = np.zeros( [ self._NFaultModes , 3 ] )
+				Tk = np.zeros( [ self._NFaultModes , 3 ] )
+				pFaultk = np.zeros( self._NFaultModes )
+
+
+				minChi = 0
+				ExcIndex = 0
+				self.numOfModesFailed = [ 0, 0, 0] # re-initialize mode failure counters
+				self.testStats = [ [], [], [] ]
+
+				for k in range( self._NFaultModes ):
+
+					faultMode = self._faultModes[k]
+				
+					
+					pFaultk[k], faultCompliment= self.__probabilityOfFaultMode(faultMode, svIDx2 )
+					dxk[k,:], enuCovk[k,:], enuCovSSk[k,:], bk[k,:] \
+						=self.__evaluateWLSFaultModeSolnSep( Gx2, Wx2, OMCx2, \
+						svIDx2, faultMode, count, ExcIndex )
+	
+					status, Tk[k,:], count3 = self.__evalFaultModeThresholdTest( faultMode,\
+						faultCompliment, \
+						dxk[k,:], enuCovSSk[k,:], count3)
+			
+					minChi, ExcIndex = self.minSatPick(Gx2, Wx2, OMCx2, svIDx2, faultMode, minChi, ExcIndex )
+
+				#f= open("TestfailuresTestRunT1003.txt", 'a')
+				#f.write(str('Faulted ') + str(self.numOfModesFailed) + '\n')
+			#print(ARAIM.numOfModesFailed)
+				#f.close()
+
+				#f= open("dx0sTestRunT100.txt", 'a')
+				#f.write(str(self._dx0[0,0:3]) + '\n')
+			#print(ARAIM.numOfModesFailed)
+				#f.close()
+
+				chiStatus = self.__evalChiSquareOfAllInViewSoln(Gx2, OMCx2, count, ExcIndex)
+ 
+		
+				EPLup,EPLlow  = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+					bk, enuCovk, Tk, pFaultk, 0)
+				NPLup, NPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+					bk, enuCovk, Tk, pFaultk, 1)
+				VPL, VPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+					bk, enuCovk, Tk, pFaultk, 2)
+				HPL = np.sqrt( EPLup**2 + NPLup**2 )
+
+				self.__calcuateFFSolnAccuracyAndEMT(Gx2, Wx2, Tk, pFaultk, count, ExcIndex)
+				count3 = 0
+
+		else:
+
+			#f= open("dx0sTestRunT100.txt", 'a')
+			#f.write(str(self._dx0[0,0:3]) + '\n')
+			#print(ARAIM.numOfModesFailed)
+			#f.close()			
+
+			chiStatus = self.__evalChiSquareOfAllInViewSoln(G0, OMC, count, ExcIndex)
+ 
+		
+			EPLup,EPLlow  = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+				bk, enuCovk, Tk, pFaultk, 0)
+			NPLup, NPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+				bk, enuCovk, Tk, pFaultk, 1)
+			VPL, VPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
+				bk, enuCovk, Tk, pFaultk, 2)
+			HPL = np.sqrt( EPLup**2 + NPLup**2 )
+
+			self.__calcuateFFSolnAccuracyAndEMT(G0, W0, Tk, pFaultk, count, ExcIndex)
+
+			#Time = Time + 10
+
+		
 
 		return HPL, VPL
 
@@ -747,7 +993,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Update the algorithm parameters that come from the Integrity Support Message (ISM)
 		these are assuming a baseline ISM from Table I in (Blanch et. al.; 2015)
-
 		inputs:
 			sigURA - std. dev. of the clock and ephemeris
 				error for Integrity {np.array}(#Sat by 1)
@@ -889,9 +1134,7 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Given a list of satellite poisitions and their PRN, determine the geometry matrix
 		in ENU with individual clock bias partials for each constellation.
-
 		
-
 		inputs:
 			satsXYZ - ECEF XYZ list of satellite positions {np.array}(#Sats by 3)
 			usrPos  - ECEF XYZ user positions {np.array}(1 by 3)
@@ -926,7 +1169,6 @@ class MultiHypothesisSolutionSeperation():
 			measuredPR - receiver's psuedorange measurements
 			satsXYZ - ECEF XYZ list of satellite positions {np.array}(#Sats by 3)
 		        usrPos  - ECEF XYZ user positions {np.array}(1 by 3)
-
 		output:
 			OMC - a vector of receiver measured minus nominal predicted GNSS 
 			      psuedoranges {np.array}(# Sat by 1)
@@ -944,7 +1186,7 @@ class MultiHypothesisSolutionSeperation():
 		
 		return omc
 
-	def __wlsAllInViewMatrix(self, G , svID, OMC):
+	def __wlsAllInViewMatrix(self, G , svID, OMC, count, ExcIndex):
 		"""
 		Determine weighted least squares
 		for all satellite in view S Matrix, save as class member.
@@ -954,7 +1196,6 @@ class MultiHypothesisSolutionSeperation():
 			    different clock bias partials for each constellation
 		outputs:
 			stores (G^T*W*G)^(-1) as class parameter
-
 			returns 
 				envCov of all in view solution
 				b worst case impact from bias of all in view
@@ -965,6 +1206,10 @@ class MultiHypothesisSolutionSeperation():
 		Wdiag = 1./np.array( self._Cint )
 		W = np.matrix( np.diag( Wdiag ) )
 
+		#if (count > 0):
+				#W = np.delete(W, ExcIndex, 0)
+				#W = np.delete(W, ExcIndex, 1)
+
 		
 		self._AllInViewInvGTWG = np.linalg.inv( G.T*W*G )
 		
@@ -972,6 +1217,7 @@ class MultiHypothesisSolutionSeperation():
 		S0=self._AllInViewInvGTWG*G.T*W
 		x,y=np.shape(S0)
 		self._dx0[0,0:x] = np.array(S0*OMC).T
+		print(self._dx0[0,0:x])
 		# determine worst-case impact from biases Eq. 16 from Blanch
 		b = np.zeros(3)
 		for q in range(3):
@@ -981,16 +1227,47 @@ class MultiHypothesisSolutionSeperation():
 		
 		return enuCov, b, W
 
-	def __evaluateWLSFaultModeSolnSep(self, G, W, OMC, svID, faultMode ):
+	def __wlsAllInViewMatrix2(self, G , svID, OMC):
+		"""
+		Determine weighted least squares
+		for all satellite in view S Matrix, save as class member.
+		
+		inputs:
+			G - geometry matrix in ENU with 
+			    different clock bias partials for each constellation
+		outputs:
+			stores (G^T*W*G)^(-1) as class parameter
+			returns 
+				envCov of all in view solution
+				b worst case impact from bias of all in view
+				W weight matrix of all in view
+		"""
+		# the diagonal elements of the weighting matrix are
+		# the inverse of the error covariance
+		Wdiag = 1./np.array( self._Cint )
+		W = np.matrix( np.diag( Wdiag ) )
+
+
+		
+		self._AllInViewInvGTWG = np.linalg.inv( G.T*W*G )
+		
+		enuCov = np.diag( self._AllInViewInvGTWG )
+		S0=self._AllInViewInvGTWG*G.T*W
+		x,y=np.shape(S0)
+		self._dx0wls[0,0:x] = np.array(S0*OMC).T
+		print(self._dx0wls[0,0:x])
+		
+		return enuCov, W
+
+	def __evaluateWLSFaultModeSolnSep(self, G, W, OMC, svID, faultMode, count, ExcIndex ):
 		"""
 		Use rank one updates to determine an WLS S matrix 
 		for a fault mode
-
 		inputs: 
 		 	G - geometry matrix in ENU w/ different clock bias partials
 			for each GNSS constellation
 		"""
-		 # check if the fault mode is only one sat (THis is likely majority of cases)
+		 # check if the fault mode is only one sat (This is likely majority of cases)
 		Wk, delIndices = self.__calculateFaultModeWeightMatrix(faultMode, svID)
 		S0=self._AllInViewInvGTWG*G.T*W
 		if len( delIndices ) == 1:
@@ -1010,12 +1287,20 @@ class MultiHypothesisSolutionSeperation():
 		
 
 			
+			#if (count > 0):
+				#Wk = np.delete(Wk, ExcIndex, 0)
+				#Wk = np.delete(Wk, ExcIndex, 1)
+			
 			Sk = invGTWGk*G.T*Wk
 			
 
 		else:
 		# if more than one, just revert to standard, less efficient, calculation
 			Gk =  self.__reshapeGeometryMatrixForMissingConstellation(faultMode, G)
+			#print(Gk.shape)
+			#if (count > 0):
+				#Wk = np.delete(Wk, ExcIndex, 0)
+				#Wk = np.delete(Wk, ExcIndex, 1)
 			invGTWGk = np.linalg.inv( Gk.T*Wk*Gk )
 			Sk =invGTWGk*Gk.T*Wk
 			
@@ -1030,6 +1315,11 @@ class MultiHypothesisSolutionSeperation():
 		# determine the ENU covariance of the solution seperation, dx
 		enuCovSS = np.zeros(3)
 		Cacc = np.matrix( np.diag( self._Cacc ) )
+
+		#if (count > 0):
+				#Cacc = np.delete(Cacc, ExcIndex, 0)
+				#Cacc = np.delete(Cacc, ExcIndex, 1)
+
 		for q in range(3):
 			x,y=np.shape(Sk)
 			e = np.zeros(x)
@@ -1055,11 +1345,128 @@ class MultiHypothesisSolutionSeperation():
 		deltaX[2]=dx[2,0]
 		deltaX[3]=dx[3,0]
 		return deltaX, enuCov, enuCovSS, b
+
+	def minSatPick(self, G, W, OMC, svID, faultMode, minChi, ExcIndex ):
+
+		
+		Wk, delIndices = self.__calculateFaultModeWeightMatrix(faultMode, svID)
+
+		#print(delIndices)
+
+		chiall = OMC.T*( W - W*G*np.linalg.inv( G.T*W*G )*G.T*W )*OMC
+
+		if len( delIndices ) == 1:
+
+			delInd = delIndices[0]
+
+			#print(delInd)
+
+			#G=np.matrix(G)
+
+			#Gk =  self.__reshapeGeometryMatrixForMissingConstellation(faultMode, G)
+
+
+			GTrans = np.array([G[delInd,:]])
+			
+
+			chiupdate = chiall - (W[delInd,delInd]/( 1.0 - G[delInd,:]*W[delInd,delInd]*self._AllInViewInvGTWG*GTrans.T))*(( OMC[delInd,0] - G[delInd,:]*self._AllInViewInvGTWG*G.T*W*OMC )**2)
+
+			#print(chiupdate)
+
+			chisubtract = (W[delInd,delInd]/( 1.0 - G[delInd,:]*W[delInd,delInd]*self._AllInViewInvGTWG*GTrans.T ))*(( OMC[delInd,0] - G[delInd,:]*self._AllInViewInvGTWG*G.T*W*OMC )**2)
+
+			if chiupdate < minChi or minChi == 0:
+
+				minChi = chiupdate
+				ExcIndex = delInd
+				print(chiupdate)
+				#print(chiall)
+				#print(chisubtract)
+				print(ExcIndex)
+				print "Chi-Squared Stat for Sat %d is %5.4f"%(ExcIndex,chiupdate)
+			else:
+				minChi = minChi
+				ExcIndex = ExcIndex
+				print(chiupdate)
+				print(delInd)
+				print "Chi-Squared Stat for Sat %d is %5.4f"%(delInd,chiupdate)
+
+			
+
+				
+			#print(ExcIndex)
+
+		#else:
+
+			#chiupdate = OMC.T*(Wk-(Wk*Gk*Sk))*OMC
+
+			#if chiupdate < minChi or minChi == 0:
+
+			#	minChi = chiupdate
+			#else:
+			#	minChi = minChi
+		
+
+
+		return minChi, ExcIndex
+
+			
+	def SatExc(self, ExcIndex, G, W, OMC, svID, count, satsXYZ):
+
+		print(ExcIndex)
+		#print(svID(ExcIndex))
+		
+		print(G.shape)
+		print(W.shape)
+		print(OMC.shape)
+		print(len(svID))
+		print(satsXYZ.shape)
+
+		Gx = np.delete(G, ExcIndex, 0)
+		OMCx = np.delete(OMC, ExcIndex, 0)
+		Wx = np.delete(W, ExcIndex, 0)
+		Wx = np.delete(Wx, ExcIndex, 1)
+		svIDx = np.delete(svID, ExcIndex, 0)
+		satsXYZx = np.delete(satsXYZ, ExcIndex, 0)
+
+		print(Gx.shape)
+		print(Wx.shape)
+		print(OMCx.shape)
+		print(len(svIDx))
+		print(satsXYZx.shape)
+		
+		count = count + 1
+
+		return Gx, Wx, OMCx, svIDx, count, satsXYZx
+
+	def SatRemove(self, failSat, G, OMC, svID, count, satsXYZ):
+
+		print(failSat)
+		#print(svID(ExcIndex))
+		
+		print(G.shape)
+		print(OMC.shape)
+		print(len(svID))
+		print(satsXYZ.shape)
+
+		Gx = np.delete(G, failSat, 0)
+		OMCx = np.delete(OMC, failSat, 0)
+		svIDx = np.delete(svID, failSat, 0)
+		satsXYZx = np.delete(satsXYZ, failSat, 0)
+
+		print(Gx.shape)
+		print(OMCx.shape)
+		print(len(svIDx))
+		print(satsXYZx.shape)
+		
+		count = count + 1
+
+		return Gx, OMCx, svIDx, count, satsXYZx
+
 	
-	def __evalFaultModeThresholdTest(self, faultMode, faultCompliment, dx, enuCovSS):
+	def __evalFaultModeThresholdTest(self, faultMode, faultCompliment, dx, enuCovSS, count2):
 		"""
 		Implementation of Solution Seperation Threshold Tests.
-
 		Eqs. 18-21 from Blanch et al. 2015
 		inputs:
 			faultMode - description of faultMode
@@ -1077,29 +1484,30 @@ class MultiHypothesisSolutionSeperation():
 		Kfa.append( ( scipy.stats.norm.isf( self._pFAHoriz / (4.0*self._NFaultModes) ) ) )
 		Kfa.append( ( scipy.stats.norm.isf( self._pFAVert / (2.0*self._NFaultModes) ) ) )
 	
+		#print(Kfa)
+		#print(enuCovSS)
+
 		T=[None,None,None]
 		for q in range(3):
 			T[q] = Kfa[q]*np.sqrt( enuCovSS[q] )
 			tau = abs( dx[q] ) / ( T[q] ) 
 			self.testStats[q].append(tau)
 			if tau > 1.0:
-				print "Fail %f > 1.0, \n Events included in Failure -->"%(tau)
-				print( faultCompliment )
+				#print "Fail %f > 1.0, \n Events included in Failure -->"%(tau)
+				#print( faultCompliment )
 				self.numOfModesFailed[q] += 1 
 				#return True , T
+				count2 = count2+1
 
 			
-		return False, T
+		return False, T, count2
 
-	def __evalChiSquareOfAllInViewSoln(self, G, OMC ):
+	def __evalChiSquareOfAllInViewSoln(self, G, OMC, count, ExcIndex ):
 		"""
 		Calculate the Chi-Squared statistics for the all-in-view solution.
-
 		Eq 22 of Blanch et al. 2015
-
 		If all solution seperation tests pass, but chi-square test fails,
 		there is still a failure likely, so a potection level cannot be evaluated
-
 		inputs:
 			G - all in view geometry matrix with position partials in ENU
 			OMC - difference between observed and computed psuedoranges
@@ -1111,6 +1519,11 @@ class MultiHypothesisSolutionSeperation():
 
 
 		Wacc = np.matrix( np.diag( self._Cacc ) )
+
+		#if (count > 0):
+				#Wacc = np.delete(Wacc, ExcIndex, 0)
+				#Wacc = np.delete(Wacc, ExcIndex, 1)
+
 		self.chiSqStat = OMC.T*( Wacc - Wacc*G*np.linalg.inv( G.T*Wacc*G )*G.T*Wacc )*OMC
 		dof = self._nSatsTracked - 3 - self._nConstTracked
 		self.chiSqEval = scipy.stats.chi2.pdf( self.chiSqStat, dof )
@@ -1122,9 +1535,7 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Calculate for the Vertical/Horizontal Protection Limit (VPL) using the linear approximation
 		(NOT ITERATIVE USING BISECTION)
-
 		Appendix B.A) in Blanch et al 2015.
-
 		inputs:
 			b0 - worst-case positioning impact from biases for all in view solution {1,3}
 			enuCov0 - estimated covariance of all in view position solution {1,3}
@@ -1136,7 +1547,6 @@ class MultiHypothesisSolutionSeperation():
 				0 - East
 				1 - North
 				2 - Vertical
-
 		"""
 		# Eq. 62
 		if qIndex == 2:
@@ -1209,7 +1619,7 @@ class MultiHypothesisSolutionSeperation():
 			numSat.append(n)
 		return numSat
 
-	def __calcuateFFSolnAccuracyAndEMT(self, G, W, Tk, pFaultk):
+	def __calcuateFFSolnAccuracyAndEMT(self, G, W, Tk, pFaultk, count, ExcIndex):
 		""" 
 		1) Evaluate the standard deviation of the vertical position solution using Eq. 27 
 		2) Determine the accuracy bound to test 95% at 4m
@@ -1223,7 +1633,15 @@ class MultiHypothesisSolutionSeperation():
 		e = np.matrix( np.zeros( np.shape( S0 )[0] ) )
 		e[0,2] = 1.0
 		Cacc = np.matrix( np.diag( self._Cacc ) )
+
+		#if (count > 0):
+		#		Cacc = np.delete(Cacc, ExcIndex, 0)
+		#		Cacc = np.delete(Cacc, ExcIndex, 1)
+
 		sigVACC = np.sqrt( e*S0*Cacc*S0.T*e.T )
+
+		print("sigVACC: ")
+		print(sigVACC)
 
 		self._thresh4mAt95prcnt = self._kACC*sigVACC # less stringent requirement
 		self._thresh10mFaultFree = self._kFF*sigVACC # more stringent requirement
@@ -1233,5 +1651,3 @@ class MultiHypothesisSolutionSeperation():
 			if ( pFaultk[k] >= self._pEMT ):
 				Temt.append( Tk[k,2] )
 		self._EMT = max( Temt )
-
-

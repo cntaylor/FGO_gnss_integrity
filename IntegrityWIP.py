@@ -2,7 +2,6 @@
 
 """
    This is a python module that implements GNSS integrity-monitoring algorithms.
-
    __author__='Jason N. Gross'
    __email__='Jason.Gross@mail.wvu.edu'
 """
@@ -40,7 +39,6 @@ class KFIntegrityMonitor():
 		""" 
 		    initialize KF Integrity Monitoring Algorithm
 		    The default values for probabilities are taken from:
-
 		    RTCA Special Committee 159, 
 		    "aMinimum Aviation System Performance Standards 
 		    for the Local Area Augmentation System
@@ -108,7 +106,6 @@ class KFIntegrityMonitor():
 		""" 
 		Evaluate current RSOS add to the array that is keeping a running history, 
 		removing elements if necessary 
-
 		inputs:
 			R - KF Measurement Error Covariance
 		"""
@@ -143,7 +140,6 @@ class KFIntegrityMonitor():
 	def residualCovarianceMatrix( H,K,R,Pminus ):
 		"""
 		Calculate the covariance matrix of the Kalman Filter Postfit Residuals 
-
 		inputs:
 			H - GNSS Observation matrix
 			K - Kalman Gain Matrix
@@ -168,9 +164,7 @@ class KFIntegrityMonitor():
 			Determine the alpha parameters of the noncentralized 
 			chi-squared distribution that represents the current time
 			test statistic (i.e. the 'currentRSOS')
-
 			This is eqs. 29-30 of Joerger and Pervan's paper.
-
 		inputs:
 			R - KF Assumed Measurement Error Covariance Matrix 
 		"""
@@ -190,16 +184,13 @@ class MultiHypothesisSolutionSeperation():
 	"""
 		This class is an implementation of the Multiple Hypothesis Solution Seperation
 		RAIM algorithm presented in:
-
 		Blanch, Juan, et al. "An optimized multiple hypothesis RAIM algorithm for vertical 
 		guidance." Proceedings of the 20th International Technical Meeting of the 
 		Satellite Division of The Institute of Navigation (ION GNSS 2007). 2001.
-
 		and More recently:
 		Blanch, Juan, et al. "Baseline advanced RAIM user algorithm and 
 		possible improvements." 
 		Aerospace and Electronic Systems, IEEE Transactions on 51.1 (2015): 713-732
-
 		 all units are in SI- MKS: Meter, Kilogram, Seconds
 	"""
 
@@ -266,7 +257,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Determine the probability bounds for assessing the max # of faults that must be tested explicilty for 
 		failure
-
 		Eqs. 75-78 of Blanch et al. 2015
 		"""
 
@@ -296,7 +286,6 @@ class MultiHypothesisSolutionSeperation():
 	def __determinePossibleFaultModeCombinations(self, svID):
 		"""
 		Determine all the possible subsets of sats exlcuing possible failures
-
 		start with {n;k} = n!/(k!*(n-k)!) where 
 			n is (number of failure events)
 			k is (number of failure events - NFaultMax)
@@ -396,7 +385,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Determine the upper bound on the probability of multiple faults
 		that are not monitored, this is the upper bount evaluated for r= NFaultMax +1 
-
 		This is Eq. 74 from Blanch et al 2015
 		"""
 		r = self._NFaultMax + 1
@@ -406,7 +394,6 @@ class MultiHypothesisSolutionSeperation():
 	def __probabilityFaultNotMonitored(self):
 		"""
 		Determine the integrity risk of the modes not explicitly monitored.
-
 		This is Equation 11 of Blanch et al 2015
 		"""
 		self._pFaultNotMonitored = self._pMultiFaultNotMonitored + self._pUnobservable
@@ -416,7 +403,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		For given fault mode, zero out elements of the weight matrix that are failed.
 		Eq. 12 of Blanch et al. 2015
-
 		inputs:
 			faultMode - list of satellites and constellations included in this solution mode
 			svID - list of the all in view satellites
@@ -514,7 +500,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Multipath GPS user error estimate dependent on elevation angle
 		Eq 57(2) of Blanch et. al. 2015.
-
 		input:
 			elv - satellite elevation angle from the user's perspective {rad.}
 		output:
@@ -527,7 +512,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Sigma Noise GPS user error based on elevation angle.
 		Eq. 57(3) of Blanch et. al. 2015.
-
 		input:
 			elv - satellite elevation angle from the user's perspective {rad.}
 		output:
@@ -539,7 +523,6 @@ class MultiHypothesisSolutionSeperation():
 	def __gpsUserErrorModel(self, elv):
 		"""
 		GPS Error model, Equation 57(1) of Blanch et. al. 2015.
-
 		input:
 			elv - satellite elevation angle from the user's perspective {rad.}
 		output:
@@ -562,7 +545,6 @@ class MultiHypothesisSolutionSeperation():
 	def __calculateAllInViewCovariance(self, satsXYZ, usrPos, svID):
 		"""
 		Compute the pseudorange covariance matrix for integrity Cint and Cacc
-
 		inputs:
 			satsXYZ - ECEF XYZ list of satellite positions {np.array}(#Sats by 3)
 			usrPos  - ECEF XYZ user positions {np.array}(1 by 3)
@@ -573,7 +555,6 @@ class MultiHypothesisSolutionSeperation():
 				38 - 61 is GLONASS and is slot + 37
 				71 - 106 is GALILEO anf is PRN + 70
 				62 used for unknown GLONASS
-
 		outputs:
 			Cint - diagonal elements of the nominal error model used for integrity
 			Cacc - diagonal elements of the nominal error model used for continuity
@@ -631,14 +612,12 @@ class MultiHypothesisSolutionSeperation():
 		""" 
 			Calculate the observation matrix, H, given the geometry matrix, G
 			
-
 			Input:
 				G - geometry matrix
 				W - based on self._Cint for weighting the solution, 
 				    but calculated elsewhere
 			Output:
 				observation matrix
-
 		"""
 
 		return np.linalg.inv(G.T*W*G)*G.T*W
@@ -646,9 +625,7 @@ class MultiHypothesisSolutionSeperation():
 	def __parityMatVec( self, H, OMC ):
 		""" 
 			Calculate the parity vector and matrix
-
 			From Eq. 19 & 20 of
-
 			Joerger, M., et al. "Integrity Risk and Continuity Risk for Fault Detection 
 			and Exclusion Using Solution Separation ARAIM." Proceedings of the 
 			26th International Technical Meeting of The Satellite Division of the 
@@ -664,7 +641,6 @@ class MultiHypothesisSolutionSeperation():
 	def ARAIM(self, nSat,  satsXYZ, prObs, svID):
 		"""
 		Main method for running ARAIM
-
 		inputs:
 			nSat - Number of Sats for this epoch of data
 			satsXYZ - ECEF satellite locations for this epoch
@@ -712,6 +688,8 @@ class MultiHypothesisSolutionSeperation():
 		
 		self.numOfModesFailed = [ 0, 0, 0] # re-initialize mode failure counters
 		self.testStats = [ [], [], [] ]
+		minChi = 0
+		ExcIndex = 0
 		for k in range( self._NFaultModes ):
 			
 			faultMode = self._faultModes[k]
@@ -724,7 +702,17 @@ class MultiHypothesisSolutionSeperation():
 					faultCompliment, \
 					dxk[k,:], enuCovSSk[k,:]) 
 
+			minChi, ExcIndex = self.minSatPick(G0, W0, OMC, svID, faultMode, minChi, ExcIndex )
+
 		chiStatus = self.__evalChiSquareOfAllInViewSoln(G0, OMC)
+
+		#Adding in methods to determine minimum Chi-squared result 
+		
+		
+
+		#Excluding the faulted satellite will go here
+
+		#Recalculating the test statitic will go here? 
 		
 		EPLup,EPLlow  = self.__calculateComponentProtectionLimit( b0, enuCov0, \
 				bk, enuCovk, Tk, pFaultk, 0)
@@ -747,7 +735,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Update the algorithm parameters that come from the Integrity Support Message (ISM)
 		these are assuming a baseline ISM from Table I in (Blanch et. al.; 2015)
-
 		inputs:
 			sigURA - std. dev. of the clock and ephemeris
 				error for Integrity {np.array}(#Sat by 1)
@@ -889,9 +876,7 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Given a list of satellite poisitions and their PRN, determine the geometry matrix
 		in ENU with individual clock bias partials for each constellation.
-
 		
-
 		inputs:
 			satsXYZ - ECEF XYZ list of satellite positions {np.array}(#Sats by 3)
 			usrPos  - ECEF XYZ user positions {np.array}(1 by 3)
@@ -926,7 +911,6 @@ class MultiHypothesisSolutionSeperation():
 			measuredPR - receiver's psuedorange measurements
 			satsXYZ - ECEF XYZ list of satellite positions {np.array}(#Sats by 3)
 		        usrPos  - ECEF XYZ user positions {np.array}(1 by 3)
-
 		output:
 			OMC - a vector of receiver measured minus nominal predicted GNSS 
 			      psuedoranges {np.array}(# Sat by 1)
@@ -954,7 +938,6 @@ class MultiHypothesisSolutionSeperation():
 			    different clock bias partials for each constellation
 		outputs:
 			stores (G^T*W*G)^(-1) as class parameter
-
 			returns 
 				envCov of all in view solution
 				b worst case impact from bias of all in view
@@ -985,7 +968,6 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Use rank one updates to determine an WLS S matrix 
 		for a fault mode
-
 		inputs: 
 		 	G - geometry matrix in ENU w/ different clock bias partials
 			for each GNSS constellation
@@ -1055,11 +1037,75 @@ class MultiHypothesisSolutionSeperation():
 		deltaX[2]=dx[2,0]
 		deltaX[3]=dx[3,0]
 		return deltaX, enuCov, enuCovSS, b
+
+	def minSatPick(self, G, W, OMC, svID, faultMode, minChi, ExcIndex ):
+
+		
+		Wk, delIndices = self.__calculateFaultModeWeightMatrix(faultMode, svID)
+
+		#print(delIndices)
+
+		chiall = OMC.T*( W - W*G*np.linalg.inv( G.T*W*G )*G.T*W )*OMC
+
+		if len( delIndices ) == 1:
+
+			delInd = delIndices[0]
+
+			#print(delInd)
+
+			#G=np.matrix(G)
+
+			#Gk =  self.__reshapeGeometryMatrixForMissingConstellation(faultMode, G)
+
+
+			GTrans = np.array([G[delInd,:]])
+			
+
+			chiupdate = chiall - (W[delInd,delInd]/( 1.0 - G[delInd,:]*W[delInd,delInd]*self._AllInViewInvGTWG*GTrans.T))*(( OMC[delInd,0] - G[delInd,:]*self._AllInViewInvGTWG*G.T*W*OMC )**2)
+
+			#print(chiupdate)
+
+			chisubtract = (W[delInd,delInd]/( 1.0 - G[delInd,:]*W[delInd,delInd]*self._AllInViewInvGTWG*GTrans.T ))*(( OMC[delInd,0] - G[delInd,:]*self._AllInViewInvGTWG*G.T*W*OMC )**2)
+
+			if chiupdate < minChi or minChi == 0:
+
+				minChi = chiupdate
+				ExcIndex = delInd
+				print(chiupdate)
+				#print(chiall)
+				#print(chisubtract)
+				print(ExcIndex)
+			else:
+				minChi = minChi
+				ExcIndex = ExcIndex
+				#print(chiupdate)
+				#print(ExcIndex)
+
+			
+
+				
+			#print(ExcIndex)
+
+		#else:
+
+			#chiupdate = OMC.T*(Wk-(Wk*Gk*Sk))*OMC
+
+			#if chiupdate < minChi or minChi == 0:
+
+			#	minChi = chiupdate
+			#else:
+			#	minChi = minChi
+
+
+		return minChi, ExcIndex
+
+			
+
+
 	
 	def __evalFaultModeThresholdTest(self, faultMode, faultCompliment, dx, enuCovSS):
 		"""
 		Implementation of Solution Seperation Threshold Tests.
-
 		Eqs. 18-21 from Blanch et al. 2015
 		inputs:
 			faultMode - description of faultMode
@@ -1083,8 +1129,8 @@ class MultiHypothesisSolutionSeperation():
 			tau = abs( dx[q] ) / ( T[q] ) 
 			self.testStats[q].append(tau)
 			if tau > 1.0:
-				print "Fail %f > 1.0, \n Events included in Failure -->"%(tau)
-				print( faultCompliment )
+				#print "Fail %f > 1.0, \n Events included in Failure -->"%(tau)
+				#print( faultCompliment )
 				self.numOfModesFailed[q] += 1 
 				#return True , T
 
@@ -1094,12 +1140,9 @@ class MultiHypothesisSolutionSeperation():
 	def __evalChiSquareOfAllInViewSoln(self, G, OMC ):
 		"""
 		Calculate the Chi-Squared statistics for the all-in-view solution.
-
 		Eq 22 of Blanch et al. 2015
-
 		If all solution seperation tests pass, but chi-square test fails,
 		there is still a failure likely, so a potection level cannot be evaluated
-
 		inputs:
 			G - all in view geometry matrix with position partials in ENU
 			OMC - difference between observed and computed psuedoranges
@@ -1122,9 +1165,7 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		Calculate for the Vertical/Horizontal Protection Limit (VPL) using the linear approximation
 		(NOT ITERATIVE USING BISECTION)
-
 		Appendix B.A) in Blanch et al 2015.
-
 		inputs:
 			b0 - worst-case positioning impact from biases for all in view solution {1,3}
 			enuCov0 - estimated covariance of all in view position solution {1,3}
@@ -1136,7 +1177,6 @@ class MultiHypothesisSolutionSeperation():
 				0 - East
 				1 - North
 				2 - Vertical
-
 		"""
 		# Eq. 62
 		if qIndex == 2:
@@ -1233,5 +1273,3 @@ class MultiHypothesisSolutionSeperation():
 			if ( pFaultk[k] >= self._pEMT ):
 				Temt.append( Tk[k,2] )
 		self._EMT = max( Temt )
-
-
