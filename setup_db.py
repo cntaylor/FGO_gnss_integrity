@@ -149,13 +149,12 @@ def create_measurement_database(db_name="measurement_data.db"):
                     Method_ID     INTEGER NOT NULL,
 
                     -- Required Data (3-element numpy array stored as a BLOB)
-                    Error    BLOB    NOT NULL, -- X,y,z in NED about truth error = estimated - truth
+                    Error    BLOB    NOT NULL, -- x,y,z in NED about truth error = estimated - truth
 
                     -- Optional Data (BLOBs and TEXT)
-                    Sat_Outliers  BLOB    NULL,          -- For numpy array of booleans, length of satellites for MC_sample
-                    Covariance_Blob BLOB    NULL,          -- For 3x3 numpy array, NED covariance in meters
-                    ARAIM_Results TEXT    NULL,          -- For JSON string
-
+                    Results_data    TEXT    NULL,            -- For JSON string (data and/or metadata for BLOB)
+                    Results_blob        BLOB    NULL,        -- For any binary data
+                           
                     -- Define the Composite Primary Key
                     PRIMARY KEY (MC_Sample_ID, Method_ID)
                            
