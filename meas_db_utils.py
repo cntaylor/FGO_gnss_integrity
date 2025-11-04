@@ -1,20 +1,43 @@
+"""meas_db_utils
+
+Lightweight utilities for accessing measurement and snapshot data from the
+local SQLite schema and a small set of pure-numpy GNSS helper functions.
+
+This module is intentionally small and readable for revision 0. For later
+revisions consider splitting DB access (meas_db) and numeric models
+(meas_model) into separate modules.
+
+Expectations:
+- Database schema contains tables: Snapshots, Satellite_Locations, MC_Samples,
+  Measurements with the columns referenced below.
+- Numpy arrays are used for locations and measurement matrices.
+
+The functions here intentionally accept a sqlite3.Connection object named
+`conn` and return plain Python / numpy types.
+"""
+
 import sqlite3
+import logging
+from typing import List, Tuple, Sequence, Optional, Union
+
 import numpy as np
 
+log = logging.getLogger(__name__)
+if not logging.getLogger().handlers:
+    # Basic configuration when module used directly
+    logging.basicConfig(level=logging.INFO)
 
-import sqlite3
-import numpy as np
+consts = {
+    'c': 299792458,  # speed of light in meters / second
+    'omega_ecef_eci': 7.292115E-5,  # rotation of earth in radians / second
+}
 
-consts = {'c': 299792458, # speed of light in meters / second
-          'omega_ecef_eci': 7.292115E-5 # rotation of earth in radians / second
-         }
-
-def get_snapshot_ids(cursor, dataset_name=None):
+def get_snapshot_ids(conn: sqlite3.Connection, dataset_name: Optional[str] = None) -> List[int]:
     '''
     Returns a unique list of all Snapshot_IDs.
 
     Args:
-        cursor (sqlite3.Cursor): An active database cursor object.
+        conn (sqlite3.Connection): An active database connection object.
         dataset_name (str, optional): If provided, returns Snapshot_IDs 
                                       associated only with this Dataset.
                                       If None, returns all unique Snapshot_IDs.
@@ -22,138 +45,318 @@ def get_snapshot_ids(cursor, dataset_name=None):
     Returns:
         list: A list of integers representing the unique Snapshot_IDs.
     '''
-    
-    # Base SQL query to select unique Snapshot_IDs, ordered by ID
-    sql_query = """
-        SELECT DISTINCT Snapshot_ID
-        FROM Snapshots
-    """
-    
-    parameters = []
-    
-    # Conditional logic to add the WHERE clause
-    if dataset_name is not None:
-        # Append the WHERE clause to filter by Dataset
-        sql_query += " WHERE Dataset = ?"
-        parameters.append(dataset_name)
-    
-    # Always append the ORDER BY clause for predictable results
-    sql_query += " ORDER BY Snapshot_ID ASC;"
-    
+    cursor = conn.cursor()
     try:
-        # Execute the query, using the parameters tuple (which is empty if dataset_name is None)
-        cursor.execute(sql_query, tuple(parameters))
-
-        # fetchall() returns a list of tuples, e.g., [(1,), (2,), (3,)]
-        raw_ids = cursor.fetchall()
-        
-        # Flatten the list of tuples into a simple list of integers
-        snapshot_id_list = [row[0] for row in raw_ids]
-
-        return snapshot_id_list
-
+        sql_query = "SELECT DISTINCT Snapshot_ID FROM Snapshots"
+        params = []
+        if dataset_name is not None:
+            sql_query += " WHERE Dataset = ?"
+            params.append(dataset_name)
+        sql_query += " ORDER BY Snapshot_ID ASC;"
+        cursor.execute(sql_query, tuple(params))
+        rows = cursor.fetchall()
+        return [r[0] for r in rows]
     except sqlite3.Error as e:
-        print(f"An error occurred while retrieving Snapshot IDs: {e}")
-        return []
+        log.error("An error occurred while retrieving Snapshot IDs: %s", e)
+        raise
+    finally:
+        cursor.close()
 
-def get_snapshot_data(cursor, snapshot_ids):
+def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Union[int, Sequence[int]]) -> Optional[Union[Tuple[np.ndarray, np.ndarray], List[Tuple[np.ndarray, np.ndarray]]]]:
     '''
     Retrieves truth and satellite location data for one or more Snapshot_IDs.
     
     The return structure depends on the input:
     - If a single integer Snapshot_ID is passed, returns a single tuple: 
       (truth_location_numpy_array, satellite_locations_numpy_array).
-    - If a list/tuple of Snapshot_IDs is passed, returns a list of tuples 
-      in the same format, ordered by the input Snapshot_ID list.
-      
+    - If a list/tuple of Snapshot_IDs is passed, returns a list of tuples
+      in the same format as the single, ordered by the input Snapshot_ID list.
+
     Returns None if any required data is missing or if a database error occurs.
     '''
-    
-    # 1. Standardize Input and Initialization
-    if isinstance(snapshot_ids, int):
-        is_single_id = True
-        id_list = [snapshot_ids]
-    elif isinstance(snapshot_ids, (list, tuple, np.ndarray)):
-        is_single_id = False
-        id_list = list(snapshot_ids)
-    else:
-        print('Unhandled type for Snapshot_ID input in get_snapshot_data()')
-        return None 
-    
-    if not id_list:
-        print('Bad? Snapshot_ID input for get_snapshot_data function')
-        return []
-
-    unique_ids = list(set(id_list))
-    # Dynamically generate '?' placeholders for the IN clause
-    placeholders = ', '.join(['?'] * len(unique_ids))
-    
-    # Initialize the results map: {SID: {'truth': None, 'sats': []}}
-    results_map = {sid: {'truth': None, 'sats': []} for sid in unique_ids}
-    
+    cursor = conn.cursor()
     try:
-        # --- 2. Retrieve Truth Locations for ALL IDs in ONE Query ---
+        # Normalize input
+        if isinstance(snapshot_ids, int):
+            is_single_id = True
+            id_list = [snapshot_ids]
+        elif isinstance(snapshot_ids, (list, tuple, np.ndarray)):
+            is_single_id = False
+            id_list = list(snapshot_ids)
+        else:
+            raise TypeError('snapshot_ids must be int or sequence of ints')
+
+        if not id_list:
+            raise ValueError('snapshot_ids must be non-empty')
+
+        unique_ids = list(set(id_list))
+        placeholders = ', '.join(['?'] * len(unique_ids))
+
+        results_map = {sid: {'truth': None, 'sats': []} for sid in unique_ids}
+
+        # Truths
         cursor.execute(f"""
             SELECT Snapshot_ID, T.True_Loc_X, T.True_Loc_Y, T.True_Loc_Z
             FROM Snapshots T
             WHERE Snapshot_ID IN ({placeholders})
         """, unique_ids)
-        
-        truth_rows = cursor.fetchall()
-        
-        # Populate the 'truth' key in the results map
-        for row in truth_rows:
+        for row in cursor.fetchall():
             sid = row[0]
-            # Store the NumPy array directly in the dictionary entry
             results_map[sid]['truth'] = np.array(row[1:])
 
-        # --- 3. Retrieve Satellite Locations for ALL IDs in ONE Query ---
-        
+        # Satellite locations
         cursor.execute(f"""
             SELECT S.Snapshot_ID, S.Loc_X, S.Loc_Y, S.Loc_Z
             FROM Satellite_Locations S
             WHERE Snapshot_ID IN ({placeholders})
             ORDER BY Snapshot_ID, Satellite_num ASC
         """, unique_ids)
-        
-        sat_rows = cursor.fetchall()
-        
-        # Aggregate raw satellite data into the 'sats' list for each SID
-        for row in sat_rows:
+        for row in cursor.fetchall():
             sid = row[0]
-            # Append the [Loc_X, Loc_Y, Loc_Z] tuple slice to the satellite list
             if sid in results_map:
                 results_map[sid]['sats'].append(row[1:])
 
-        # --- 4. Assemble Final Results ---
-        
         final_output = []
         for sid in id_list:
             if sid not in results_map or results_map[sid]['truth'] is None:
-                print(f'Error: Data not found in database for Snapshot_ID {sid}')
-            
+                raise ValueError(f'Data not found in database for Snapshot_ID {sid}')
             data = results_map[sid]
             truth_data = data['truth']
             sat_list = data['sats']
-                       
             if len(sat_list) == 0:
-                print(f"Error: Missing satellite data for Snapshot_ID {sid}")
-                return None 
-            
-            # Convert the list of satellite coordinate tuples into an nx3 numpy array
+                raise ValueError(f'Missing satellite data for Snapshot_ID {sid}')
             sat_array = np.array(sat_list)
-            
             final_output.append((truth_data, sat_array))
 
-        # 5. Return the result in the requested format
         return final_output[0] if is_single_id else final_output
-
     except sqlite3.Error as e:
-        print(f'An error occurred accessing the database: {e}')
-        # Return nothing on database error
-        return None
+        log.error('An error occurred accessing the database: %s', e)
+        raise
+    finally:
+        cursor.close()
 
-def add_MC_samples(conn, mc_run_id, data_list):
+def get_mc_sample_ids(conn: sqlite3.Connection, mc_run_id: int, dataset_name: Optional[str] = None) -> List[int]:
+    '''
+    Return a list of all MC_Sample_IDs associated with a particular MC_run.
+
+    Args:
+        cursor (sqlite3.Cursor): An active database cursor object.
+        MC_run_ID (int): The ID of the Monte Carlo run.
+        dataset_name (str, optional): If provided, limits the samples to 
+                                      those linked to this Dataset.
+
+    Returns:
+        list: A list of MC_Sample_IDs
+    '''
+    cursor = conn.cursor()
+    try:
+        sql_query = """
+            SELECT MCS.MC_Sample_ID
+            FROM MC_Samples MCS
+        """
+        params = [mc_run_id]
+        where_clauses = ["MCS.MC_Run_ID = ?"]
+        if dataset_name is not None:
+            sql_query += " JOIN Snapshots S ON MCS.Snapshot_ID = S.Snapshot_ID"
+            where_clauses.append("S.Dataset = ?")
+            params.append(dataset_name)
+        if where_clauses:
+            sql_query += " WHERE " + " AND ".join(where_clauses)
+        sql_query += " ORDER BY MCS.MC_Sample_ID ASC"
+        list_of_tuples = cursor.execute(sql_query, tuple(params)).fetchall()
+        return [t[0] for t in list_of_tuples]
+    except sqlite3.Error as e:
+        log.error('An error occurred while retrieving MC Sample IDs: %s', e)
+        raise
+    finally:
+        cursor.close()
+
+def get_mc_samples_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
+    '''
+    Retrieves the complete measurement and associated satellite location data 
+    for a list of MC_Sample_IDs.
+
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+        mc_sample_ids (list/tuple): A list or tuple of MC_Sample_IDs.
+
+    Returns:
+        list: A list of numpy arrays, where each array corresponds to an input 
+              MC_Sample_ID. Each array is Nx4: [pseudorange, sat_X, sat_Y, sat_Z].
+              Returns an empty list if no IDs are provided or on database error.
+    '''
+    if not mc_sample_ids:
+        raise ValueError('mc_sample_ids must be non-empty')
+
+    cursor = conn.cursor()
+    try:
+        unique_ids = list(set(mc_sample_ids))
+        placeholders = ', '.join(['?'] * len(unique_ids))
+        grouped_data = {sid: [] for sid in unique_ids}
+
+        cursor.execute(f"""
+            SELECT 
+                MS.MC_Sample_ID,
+                MS.Pseudorange,
+                L.Loc_X,
+                L.Loc_Y,
+                L.Loc_Z
+            FROM Measurements MS
+            JOIN MC_Samples M ON MS.MC_Sample_ID = M.MC_Sample_ID
+            JOIN Satellite_Locations L ON 
+                M.Snapshot_ID = L.Snapshot_ID AND 
+                MS.Satellite_num = L.Satellite_num
+            WHERE MS.MC_Sample_ID IN ({placeholders})
+            ORDER BY MS.MC_Sample_ID ASC, MS.Satellite_num ASC;
+        """, unique_ids)
+
+        for row in cursor.fetchall():
+            sample_id = row[0]
+            data_row = row[1:]
+            if sample_id in grouped_data:
+                grouped_data[sample_id].append(data_row)
+
+        final_output = []
+        for input_id in mc_sample_ids:
+            data_list = grouped_data.get(input_id)
+            if data_list is None or len(data_list) == 0:
+                final_output.append(np.empty((0, 4), dtype=float))
+            else:
+                final_output.append(np.array(data_list))
+        return final_output
+    except sqlite3.Error as e:
+        log.error('An error occurred during measurement retrieval: %s', e)
+        raise
+    finally:
+        cursor.close()
+
+def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
+    '''
+    Retrieves the truth location (X, Y, Z) for each associated snapshot ID 
+    for a list of MC_Sample_IDs. Throws an error if any requested ID is not found.
+
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+        mc_sample_ids (list/tuple): A list or tuple of MC_Sample_IDs.
+
+    Returns:
+        list: A list of numpy arrays, where each array is a 3-element vector 
+              [True_Loc_X, True_Loc_Y, True_Loc_Z] corresponding to an input ID.
+              Returns an empty list if any error occurs.
+              
+    Raises:
+        ValueError: If any MC_Sample_ID is not found in the database.
+    '''
+    
+    if not mc_sample_ids:
+        raise ValueError('mc_sample_ids must be non-empty')
+
+    cursor = conn.cursor()
+    try:
+        unique_ids = list(set(mc_sample_ids))
+        placeholders = ', '.join(['?'] * len(unique_ids))
+
+        cursor.execute(f"""
+            SELECT 
+                M.MC_Sample_ID,
+                S.True_Loc_X,
+                S.True_Loc_Y,
+                S.True_Loc_Z
+            FROM MC_Samples M
+            JOIN Snapshots S ON M.Snapshot_ID = S.Snapshot_ID
+            WHERE M.MC_Sample_ID IN ({placeholders})
+        """, unique_ids)
+
+        raw_results = cursor.fetchall()
+        if len(raw_results) != len(unique_ids):
+            found_ids = {row[0] for row in raw_results}
+            missing_ids = set(unique_ids) - found_ids
+            raise ValueError(
+                f"Data integrity error: The following MC_Sample_IDs were not found in the database: {list(missing_ids)}"
+            )
+
+        truth_map = {row[0]: np.array(row[1:]) for row in raw_results}
+        final_output = [truth_map[input_id] for input_id in mc_sample_ids]
+        return final_output
+    except (sqlite3.Error, ValueError) as e:
+        log.error('Error during MC sample truth retrieval: %s', e)
+        raise
+    finally:
+        cursor.close()
+
+def compute_noiseless_model(conn: sqlite3.Connection, snapshot_ids: Union[int, Sequence[int]]):
+    '''
+    For a given snapshot ID (or list of IDs), retrieve the truth location and satellite locations,
+    then compute the noiseless pseudoranges for each satellite.
+
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+        snapshot_ids (int or list of int): The Snapshot_ID(s) for which to compute pseudoranges.
+
+    The return structure depends on the input:
+    - If a single integer Snapshot_ID is passed, returns a single numpy array
+        of noiseless pseudoranges for that snapshot.
+    - If a list/tuple of Snapshot_IDs is passed, returns a list of tuples  the same format, ordered by the input Snapshot_ID list,
+    Returns None if any required data is missing or if a database error occurs.
+
+    '''
+    snapshot_list = get_snapshot_data(conn, snapshot_ids)
+
+    def pseudoranges_for_snapshot(snapshot_data):
+        true_loc, satellites = snapshot_data
+        pseudoranges = np.zeros(len(satellites))
+        for i in range(len(satellites)):
+            pseudoranges[i] = compute_noiseless_pseudorange(true_loc, satellites[i])
+        return pseudoranges
+
+    if isinstance(snapshot_ids, int):
+        return pseudoranges_for_snapshot(snapshot_list)
+
+    pseudoranges_list = []
+    for snapshot_data in snapshot_list:
+        pseudoranges_list.append(pseudoranges_for_snapshot(snapshot_data))
+    return pseudoranges_list
+
+def ut_l2_vs_noiseless_model(conn: sqlite3.Connection, sample_ids: Sequence[int]) -> bool:
+    """Simple unit test: generated noiseless pseudoranges should recover truth via L2.
+
+    Returns True when all tested samples are within tolerance.
+    """
+    all_passed = True
+    try:
+        created_pseudoranges = compute_noiseless_model(conn, sample_ids)
+    except Exception as e:
+        log.error('Failed to compute noiseless pseudoranges: %s', e)
+        return False
+
+    for i, snapshot_id in enumerate(sample_ids):
+        try:
+            data = get_snapshot_data(conn, snapshot_id)
+        except Exception as e:
+            log.error('Data retrieval failed for Snapshot_ID %s: %s', snapshot_id, e)
+            all_passed = False
+            continue
+
+        true_loc, satellites = data
+        measurement_array = np.zeros((len(satellites), 4))
+        measurement_array[:, 0] = created_pseudoranges[i]
+        measurement_array[:, 1:] = satellites
+
+        est_loc, est_time_offset = l2_estimate_location(measurement_array)
+
+        position_error = np.linalg.norm(est_loc - true_loc)
+        if position_error > 0.001:
+            log.error('Test failed for Snapshot_ID %s: Position error %s m exceeds tolerance.', snapshot_id, position_error)
+            all_passed = False
+        if est_time_offset > 0.1:
+            log.error('Test failed for Snapshot_ID %s: Time offset %s s exceeds tolerance.', snapshot_id, est_time_offset)
+            all_passed = False
+
+    if all_passed:
+        log.info('All tests passed: L2 estimation matches noiseless pseudorange model within tolerance.')
+    return all_passed
+
+def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Sequence[dict]) -> None:
     '''
     Adds entries to the MC_Samples and Measurements tables for a batch of data.
 
@@ -178,13 +381,13 @@ def add_MC_samples(conn, mc_run_id, data_list):
     '''
     
     cursor = conn.cursor()
-    
+
     try:
         # --- 1. Pre-fetch Satellite Counts ---
         # Get the expected number of satellites for every unique Snapshot_ID in the input list.
         snapshot_ids = [data['Snapshot_ID'] for data in data_list]
         unique_ids = list(set(snapshot_ids))
-        
+
         if not unique_ids:
             return
 
@@ -197,16 +400,16 @@ def add_MC_samples(conn, mc_run_id, data_list):
             WHERE Snapshot_ID IN ({placeholders})
             GROUP BY Snapshot_ID;
         """, unique_ids)
-        
+
         # Map: {Snapshot_ID: count_of_satellites}
         sat_counts = dict(cursor.fetchall())
-        
+
         # --- 2. Process and Insert Data Transaction by Transaction ---
-        
+
         for snapshot_dict in data_list:
             # Begin a transaction for this snapshot (crucial for integrity check)
             cursor.execute("BEGIN TRANSACTION")
-            
+
             snapshot_id = snapshot_dict['Snapshot_ID']
             pseudorange_array = snapshot_dict['pseudoranges']
             # A. VALIDATION CHECKS
@@ -217,14 +420,14 @@ def add_MC_samples(conn, mc_run_id, data_list):
             if expected_count is None:
                 # This could mean the Snapshot_ID doesn't exist or has no satellites
                 raise ValueError(f"Snapshot_ID {snapshot_id} not found or has no satellite data in Satellite_Locations.")
-                
+
             if actual_count != expected_count:
                 # Check you have the right number of satellites in the pseudorange data
                 raise ValueError(
                     f"Pseudorange array for Snapshot_ID {snapshot_id} is incorrect size. "
                     f"Expected {expected_count} satellites, got {actual_count} measurements."
                 )
-            
+
             if 'is_outlier' in snapshot_dict:
                 is_outlier_array = snapshot_dict['is_outlier']
                 if is_outlier_array.size != expected_count:
@@ -239,9 +442,9 @@ def add_MC_samples(conn, mc_run_id, data_list):
                 INSERT INTO MC_Samples (MC_Run_ID, Snapshot_ID)
                 VALUES (?, ?)
             """, (mc_run_id, snapshot_id))
-            
+
             new_mc_sample_id = cursor.lastrowid
-            
+
             if new_mc_sample_id is None:
                 # Should not happen under normal circumstances, but good for safety
                 raise sqlite3.Error("Failed to retrieve new MC_Sample_ID.")
@@ -267,230 +470,20 @@ def add_MC_samples(conn, mc_run_id, data_list):
                 INSERT INTO Measurements (MC_Sample_ID, Satellite_num, Pseudorange, Is_Outlier)
                 VALUES (?, ?, ?, ?)
             """, measurement_data)
-            
+
             # Commit the single transaction after all insertions succeed
             conn.commit()
-            
+
     except (sqlite3.Error, ValueError) as e:
         # If any error (database or validation) occurs, rollback the current transaction
         conn.rollback()
-        raise e # Re-raise the error so the calling function knows the insertion failed
+        raise e  # Re-raise the error so the calling function knows the insertion failed
     except Exception as e:
         # Handle unexpected Python errors
         conn.rollback()
         raise e
 
-# --- Example Usage (Conceptual) ---
-
-# 1. Get all samples for MC Run 5:
-# all_samples = get_MC_sample_ids(cursor, 5)
-
-# 2. Get samples for MC Run 5 ONLY tied to 'TRUTH_RUN_A':
-# filtered_samples = get_MC_sample_ids(cursor, 5, dataset_name="TRUTH_RUN_A")
-
-def get_MC_sample_ids (cursor, MC_run_ID, dataset_name=None):
-    '''
-    Return a tuple of all MC_Sample_IDs associated with a particular MC_run.
-
-    Args:
-        cursor (sqlite3.Cursor): An active database cursor object.
-        MC_run_ID (int): The ID of the Monte Carlo run.
-        dataset_name (str, optional): If provided, limits the samples to 
-                                      those linked to this Dataset.
-
-    Returns:
-        list: A list of MC_Sample_IDs
-    '''
-    
-    # Base SQL query: Select the Sample ID from the MC_Samples table
-    sql_query = """
-        SELECT MCS.MC_Sample_ID
-        FROM MC_Samples MCS
-    """
-    
-    parameters = [MC_run_ID]
-    where_clauses = ["MCS.MC_Run_ID = ?"]
-    
-    # Conditional logic to add the dataset filter
-    if dataset_name is not None:
-        # 1. Add a JOIN to the Snapshots table (S) to access the Dataset_ID
-        sql_query += " JOIN Snapshots S ON MCS.Snapshot_ID = S.Snapshot_ID"
-        
-        # 2. Add the Dataset_ID filter to the WHERE clause
-        where_clauses.append("S.Dataset = ?")
-        parameters.append(dataset_name)
-    
-    # Combine the base WHERE clause(s)
-    if where_clauses:
-        sql_query += " WHERE " + " AND ".join(where_clauses)
-        
-    # Add ORDER BY for predictable results (optional but good practice)
-    sql_query += " ORDER BY MCS.MC_Sample_ID ASC"
-
-    try:
-        list_of_tuples = cursor.execute(sql_query, tuple(parameters)).fetchall()
-        return [t[0] for t in list_of_tuples]
-
-    except sqlite3.Error as e:
-        print(f"An error occurred while retrieving MC Sample IDs: {e}")
-        return []
-
-
-def get_MC_samples_meas(cursor, mc_sample_ids):
-    '''
-    Retrieves the complete measurement and associated satellite location data 
-    for a list of MC_Sample_IDs.
-
-    Args:
-        cursor (sqlite3.Cursor): An active database cursor object.
-        mc_sample_ids (list/tuple): A list or tuple of MC_Sample_IDs.
-
-    Returns:
-        list: A list of numpy arrays, where each array corresponds to an input 
-              MC_Sample_ID. Each array is Nx4: [pseudorange, sat_X, sat_Y, sat_Z].
-              Returns an empty list if no IDs are provided or on database error.
-    '''
-    if not mc_sample_ids:
-        return []
-
-    # 1. Use a set of unique IDs for the efficient SQL query
-    unique_ids = list(set(mc_sample_ids))
-    placeholders = ', '.join(['?'] * len(unique_ids))
-    
-    # We will use this dictionary to store the results grouped by the unique ID
-    # {MC_Sample_ID: [[prange, x, y, z], [prange, x, y, z], ...]}
-    grouped_data = {sid: [] for sid in unique_ids}
-
-    try:
-        # 2. Execute a single, powerful JOIN query
-        # Join Measurements (MS) -> MC_Samples (M) -> Snapshots (S) -> Satellite_Locations (L)
-        # to connect the pseudorange to the corresponding satellite coordinates.
-        cursor.execute(f"""
-            SELECT 
-                MS.MC_Sample_ID,
-                MS.Pseudorange,
-                L.Loc_X,
-                L.Loc_Y,
-                L.Loc_Z
-            FROM Measurements MS
-            -- Join to MC_Samples to get the Snapshot_ID
-            JOIN MC_Samples M ON MS.MC_Sample_ID = M.MC_Sample_ID
-            -- Join to Satellite_Locations using the Snapshot_ID and Satellite_num
-            JOIN Satellite_Locations L ON 
-                M.Snapshot_ID = L.Snapshot_ID AND 
-                MS.Satellite_num = L.Satellite_num
-            WHERE MS.MC_Sample_ID IN ({placeholders})
-            -- Order by Sample_ID and Satellite_num for efficient grouping
-            ORDER BY MS.MC_Sample_ID ASC, MS.Satellite_num ASC;
-        """, unique_ids)
-
-        raw_results = cursor.fetchall()
-
-        # 3. Group the raw results by MC_Sample_ID
-        for row in raw_results:
-            sample_id = row[0]
-            data_row = row[1:] # [Pseudorange, Loc_X, Loc_Y, Loc_Z]
-            
-            if sample_id in grouped_data:
-                grouped_data[sample_id].append(data_row)
-        
-        # 4. Assemble the final output list in the order of the input IDs (maintaining duplicates)
-        final_output = []
-        for input_id in mc_sample_ids:
-            # Retrieve the list of measurements for the current ID
-            data_list = grouped_data.get(input_id)
-            
-            if data_list is None or len(data_list) == 0:
-                # If an ID was requested but no data was found, we return an empty array 
-                # for that specific ID, but keep processing the rest of the list.
-                final_output.append(np.empty((0, 4), dtype=float)) 
-            else:
-                # Convert the collected list of measurements into the final Nx4 NumPy array
-                final_output.append(np.array(data_list))
-                
-        return final_output
-
-    except sqlite3.Error as e:
-        print(f"An error occurred during measurement retrieval: {e}")
-        return []
-
-def get_MC_samples_truth(cursor, mc_sample_ids):
-    '''
-    Retrieves the truth location (X, Y, Z) for each associated snapshot ID 
-    for a list of MC_Sample_IDs. Throws an error if any requested ID is not found.
-
-    Args:
-        cursor (sqlite3.Cursor): An active database cursor object.
-        mc_sample_ids (list/tuple): A list or tuple of MC_Sample_IDs.
-
-    Returns:
-        list: A list of numpy arrays, where each array is a 3-element vector 
-              [True_Loc_X, True_Loc_Y, True_Loc_Z] corresponding to an input ID.
-              Returns an empty list if any error occurs.
-              
-    Raises:
-        ValueError: If any MC_Sample_ID is not found in the database.
-    '''
-    if not mc_sample_ids:
-        return []
-
-    # 1. Use a set of unique IDs for the efficient SQL query
-    unique_ids = list(set(mc_sample_ids))
-    placeholders = ', '.join(['?'] * len(unique_ids))
-    
-    # Dictionary to map unique Sample ID to its truth data
-    truth_map = {}
-
-    try:
-        # 2. Execute a single JOIN query
-        cursor.execute(f"""
-            SELECT 
-                M.MC_Sample_ID,
-                S.True_Loc_X,
-                S.True_Loc_Y,
-                S.True_Loc_Z
-            FROM MC_Samples M
-            JOIN Snapshots S ON M.Snapshot_ID = S.Snapshot_ID
-            WHERE M.MC_Sample_ID IN ({placeholders})
-        """, unique_ids)
-
-        raw_results = cursor.fetchall()
-
-        # 3. Integrity Check: Ensure every unique requested ID was found
-        
-        # Check if the number of unique IDs requested matches the number of unique IDs returned
-        if len(raw_results) != len(unique_ids):
-            
-            # Identify which IDs are missing (requires an extra check, but necessary for a good error message)
-            found_ids = {row[0] for row in raw_results}
-            missing_ids = set(unique_ids) - found_ids
-            
-            # THROW THE REQUESTED ERROR
-            raise ValueError(
-                f"Data integrity error: The following MC_Sample_IDs were not found in the database: {list(missing_ids)}"
-            )
-
-        # 4. Map the results by MC_Sample_ID (Only executes if the integrity check passes)
-        for row in raw_results:
-            sample_id = row[0]
-            # Convert the X, Y, Z tuple slice (row[1:]) into a numpy array
-            truth_map[sample_id] = np.array(row[1:])
-        
-        # 5. Assemble the final output list in the order of the input IDs
-        final_output = []
-        for input_id in mc_sample_ids:
-            # Since the check passed, we know truth_map[input_id] exists for unique IDs
-            # If the input list had duplicates, we pull the same numpy array multiple times
-            final_output.append(truth_map[input_id])
-                
-        return final_output
-
-    except (sqlite3.Error, ValueError) as e:
-        # If a database error or the raised ValueError occurs, print the error and return empty list
-        print(f"Error during MC sample truth retrieval: {e}")
-        return []
-
-def L2_est_location(measurement_array):
+def l2_estimate_location(measurement_array: np.ndarray) -> Tuple[np.ndarray, float]:
     '''
     Take in an Nx4 array where N is the number of satellites for that time. 
     Columns are [pseudorange, satellite_X, satellite_Y, satellite_Z].
@@ -500,17 +493,17 @@ def L2_est_location(measurement_array):
     (loc.x, loc.y, loc.z, time_offset)
     '''
     n_sats = len(measurement_array)
-    assert (n_sats>=4), "Not enough locations to run L2 estimation.  Need at least 4 satellites"
-    
+    assert (n_sats >= 4), "Not enough locations to run L2 estimation.  Need at least 4 satellites"
+
     rotation_vec = np.zeros(3)
     rotation_vec[2] = consts['omega_ecef_eci']
 
     # Start the optimization procedure to find the location
     est_loc = np.zeros(3)
-    est_time_offset = 0
+    est_time_offset = 0.0
     curr_time_meas = measurement_array.copy()
-    mag_delta = 10000
-    while mag_delta > 0.1: # Iterate till changing less than 0.1 meters
+    mag_delta = 10000.0
+    while mag_delta > 0.1:  # Iterate till changing less than 0.1 meters
         # Compute the Jacobian matrix -- unit vectors going from current location to satellite locations
         # Plus a bias for receiver clock
         J = np.zeros((n_sats,4))
@@ -530,15 +523,15 @@ def L2_est_location(measurement_array):
         # Change the satellite positions from when they were broadcast to when they were received
         for i in range(n_sats):
             orig_loc = measurement_array[i,1:]
-            dist_traveled = np.linalg.norm(est_loc - orig_loc) #+ est_time_offset
+            dist_traveled = np.linalg.norm(est_loc - orig_loc)  # + est_time_offset
             time_traveled = dist_traveled / consts['c']
             # Rotate the satellite position backwards by the time traveled
-            sat_offset = np.cross(-time_traveled*rotation_vec, orig_loc)
+            sat_offset = np.cross(-time_traveled * rotation_vec, orig_loc)
             curr_time_meas[i,1:] = orig_loc + sat_offset
         mag_delta = np.linalg.norm(delta) # When small enough, no more iterations
     return (est_loc, est_time_offset)
 
-def noiseless_pseudorange(true_loc, sat_loc):
+def compute_noiseless_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> float:
     '''
     Compute the noiseless pseudorange between a true location and a satellite location.
     Both inputs are 3-element numpy arrays representing ECEF coordinates.
@@ -548,115 +541,31 @@ def noiseless_pseudorange(true_loc, sat_loc):
     # over time, find the sat_loc _in the receiving time_ ECEF
     rotation_vec = np.zeros(3)
     rotation_vec[2] = consts['omega_ecef_eci']
-    
+
     distance = np.linalg.norm(true_loc - sat_loc)
-    delta_dist=10000.
-    while delta_dist>0.01:
+    delta_dist = 10000.0
+    while delta_dist > 0.01:
         time_traveled = distance / consts['c']
-        sat_offset = np.cross(-time_traveled*rotation_vec, sat_loc)
+        sat_offset = np.cross(-time_traveled * rotation_vec, sat_loc)
         curr_sat_loc = sat_loc + sat_offset
         new_distance = np.linalg.norm(true_loc - curr_sat_loc)
         delta_dist = abs(new_distance - distance)
-        distance = new_distance 
+        distance = new_distance
     return distance
-
-
-def noiseless_model(cursor, snapshot_ids):
-    '''
-    For a given snapshot ID (or list of IDs), retrieve the truth location and satellite locations,
-    then compute the noiseless pseudoranges for each satellite.
-
-    Args:
-        cursor (sqlite3.Cursor): An active database cursor object.
-        snapshot_ids (int or list of int): The Snapshot_ID(s) for which to compute pseudoranges.
-
-    The return structure depends on the input:
-    - If a single integer Snapshot_ID is passed, returns a single numpy array
-        of noiseless pseudoranges for that snapshot.
-    - If a list/tuple of Snapshot_IDs is passed, returns a list of tuples  the same format, ordered by the input Snapshot_ID list,
-    Returns None if any required data is missing or if a database error occurs.
-
-    '''
-    # Retrieve truth location and satellite locations from the database
-    snapshot_list = get_snapshot_data(cursor, snapshot_ids)
-
-    def pseudoranges_for_snapshot(snapshot_data):
-        true_loc, satellites = snapshot_data
-        pseudoranges = np.zeros(len(satellites))
-        for i in range(len(satellites)):
-            pseudoranges[i] = noiseless_pseudorange(true_loc, satellites[i])
-        return pseudoranges
-
-    if isinstance(snapshot_ids, int):
-        # Becuase it's not really a list, just a piece of data
-        return pseudoranges_for_snapshot(snapshot_list)
-
-    # came back with a list of data
-    pseudoranges_list = []
-    for snapshot_data in snapshot_list:
-        pseudoranges_list.append(pseudoranges_for_snapshot(snapshot_data))
-    return pseudoranges_list
-
-def ut_create_and_L2_pseudorange_are_opposites(cursor, sample_IDs):
-    '''
-    Unit test to verify that the noiseless pseudorange model and the L2 estimation
-    are inverses of each other within a small tolerance.
-
-    Args:
-        cursor (sqlite3.Cursor): An active database cursor object.
-        sample_IDs (list of int): A list of Snapshot_IDs to test.
-
-    Returns:
-        bool: True if all tests pass, False otherwise.
-    '''
-    all_passed = True
-
-    created_pseudoranges = noiseless_model(cursor, sample_IDs)
-    for i,snapshot_id in enumerate(sample_IDs):
-        # Retrieve truth location and satellite locations
-        data = get_snapshot_data(cursor, snapshot_id)
-        if data is None:
-            print(f"Data retrieval failed for Snapshot_ID {snapshot_id}.")
-            all_passed = False
-            continue
-
-        true_loc, satellites = data
-       
-        # Prepare measurement array for L2 estimation
-        measurement_array = np.zeros((len(satellites), 4))
-        measurement_array[:, 0] = created_pseudoranges[i]
-        measurement_array[:, 1:] = satellites
-        
-        # Run L2 estimation
-        est_loc, est_time_offset = L2_est_location(measurement_array)
-        
-        # Check if estimated location matches true location within tolerance
-        position_error = np.linalg.norm(est_loc - true_loc)
-        
-        if position_error > 0.001: # 0.001 meter tolerance
-            print(f"Test failed for Snapshot_ID {snapshot_id}: Position error {position_error} m exceeds tolerance.")
-            all_passed = False
-        if est_time_offset > 0.1: # 0.1 "meter" tolerance
-            print(f"Test failed for Snapshot_ID {snapshot_id}: Time offset {est_time_offset} s exceeds tolerance.")
-            all_passed = False
-    if all_passed:
-        print("All tests passed: L2 estimation matches noiseless pseudorange model within tolerance.")  
-    return all_passed
 
 if __name__ == "__main__":
     db_name = "chemnitz_data.db"
     dataset_name = 'Chemnitz'
     conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
-
     # Run the unit test for L2 and pseudorange data 
-    sample_ids = get_snapshot_ids(cursor, dataset_name=dataset_name)
-    test_passed = ut_create_and_L2_pseudorange_are_opposites(cursor, sample_ids)
-    
-    
-    data = get_snapshot_data(cursor, 5) # To pick a random one
-    if data is None:
-        print("Nothing retrieved from database! :(")
+    sample_ids = get_snapshot_ids(conn, dataset_name=dataset_name)
+    test_passed = ut_l2_vs_noiseless_model(conn, sample_ids)
+
+
+    try:
+        data = get_snapshot_data(conn, 5) # To pick a random one
+    except Exception as e:
+        print(f"Nothing retrieved from database: {e}")
     else:
         true_loc, satellites = data
         print('True loc of ',true_loc)
@@ -674,7 +583,7 @@ if __name__ == "__main__":
                     [24206377.55154, 20908080.276127, 15204464.094461, -6648871.4814316],
                     [20438005.575857, 14221365.13697, 16453041.738554, 15142841.879854],
                     [24172290.966639, 25018569.394862, 4653177.0689317, -7970367.3983922]])               
-    est_loc = L2_est_location(test_data)
+    est_loc = l2_estimate_location(test_data)
     print('Estimated',est_loc)
     truth_data = np.array([3934098.6695941, 902425.34303717, 4922416.4287205])
     print('Truth:',truth_data)
