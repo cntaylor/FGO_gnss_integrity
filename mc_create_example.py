@@ -1,4 +1,5 @@
 import meas_db_utils as mdu
+import comp_utils as cu
 import sqlite3 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,7 +7,7 @@ import json
 
 if __name__ == "__main__":
     # Connect to the database
-    db_name = "chemnitz_data.db"
+    db_name = "meas_data.db"
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
     
@@ -47,7 +48,7 @@ if __name__ == "__main__":
             if noise_std_dev == -1 or outlier_fraction == -1 or outlier_sd == -1:
                 raise ValueError(f"Invalid Monte Carlo parameters in MC_run {mc_run_id}.")
         # Generate Monte Carlo samples
-        possible_snapshot_ids = mdu.get_snapshot_ids(cursor)
+        possible_snapshot_ids = mdu.get_snapshot_ids(conn)
         # Have a long list of snapshots.  Now to randomly select from them
         selected_snapshot_ids = np.random.choice(
             possible_snapshot_ids, size=samples, replace=True
@@ -55,21 +56,26 @@ if __name__ == "__main__":
         # sqlite doesn't like np.int64 types, so convert to native Python int
         selected_snapshot_ids = [int(sid) for sid in selected_snapshot_ids]
         # Now to get the data needed to generate measurements
-        noiseless_data = mdu.noiseless_model(cursor, selected_snapshot_ids)
-        to_database_list = []
+        snapshot_data = mdu.get_snapshot_data(conn, selected_snapshot_ids)
+        # Compute noiseless pseudoranges for each sample
+        noiseless_data = cu.noiseless_model(snapshot_data)
+        to_database_list = [None] * len(selected_snapshot_ids)
         # Take each sample and add noise/outliers to generate measurements
         count = 0
-        for snapshot_id,noiseless_pseudoranges in zip(selected_snapshot_ids,noiseless_data):
+        for i in range(len(selected_snapshot_ids)):
+            snapshot_id = selected_snapshot_ids[i]
+            noiseless_pseudoranges = noiseless_data[i]
             outliers = np.random.rand(len(noiseless_pseudoranges)) < outlier_fraction
             noise = np.random.normal(0, noise_std_dev, size=len(noiseless_pseudoranges))
             noise[outliers] = np.random.normal(0, outlier_sd, size=np.sum(outliers))
             noisy_pseudoranges = noiseless_pseudoranges + noise
             # Store the generated measurements in the database
-            to_database_list.append({'Snapshot_ID': snapshot_id,
-                                      'pseudoranges': noisy_pseudoranges,
-                                      'is_outlier': outliers})
-
-        mdu.add_MC_samples(conn, mc_run_id, to_database_list)
+            to_database_list[i] = ({'Snapshot_ID': snapshot_id,
+                                    'pseudoranges': noisy_pseudoranges,
+                                    'is_outlier': outliers})
+        print(f"Generated {len(to_database_list)} Monte Carlo samples.")
+        print("Inserting samples into database...")
+        mdu.insert_mc_samples(conn, mc_run_id, to_database_list)
     except Exception as e:
         print(f"Error occurred: {e}")
         conn.rollback()

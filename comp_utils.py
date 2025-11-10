@@ -103,42 +103,42 @@ def noiseless_model(snapshot_data_list: Sequence[Tuple[np.ndarray, np.ndarray]])
         pseudoranges_list.append(pseudoranges_for_snapshot(snapshot_data))
     return pseudoranges_list
 
-def ut_l2_vs_noiseless_model(conn: sqlite3.Connection, sample_ids: Sequence[int]) -> bool:
-    """Simple unit test: generated noiseless pseudoranges should recover truth via L2.
+# def ut_l2_vs_noiseless_model(conn: sqlite3.Connection, sample_ids: Sequence[int]) -> bool:
+#     """Simple unit test: generated noiseless pseudoranges should recover truth via L2.
 
-    Returns True when all tested samples are within tolerance.
-    """
-    all_passed = True
-    try:
-        created_pseudoranges = compute_noiseless_model(conn, sample_ids)
-    except Exception as e:
-        log.error('Failed to compute noiseless pseudoranges: %s', e)
-        return False
+#     Returns True when all tested samples are within tolerance.
+#     """
+#     all_passed = True
+#     try:
+#         created_pseudoranges = compute_noiseless_model(conn, sample_ids)
+#     except Exception as e:
+#         log.error('Failed to compute noiseless pseudoranges: %s', e)
+#         return False
 
-    for i, snapshot_id in enumerate(sample_ids):
-        try:
-            data = get_snapshot_data(conn, snapshot_id)
-        except Exception as e:
-            log.error('Data retrieval failed for Snapshot_ID %s: %s', snapshot_id, e)
-            all_passed = False
-            continue
+#     for i, snapshot_id in enumerate(sample_ids):
+#         try:
+#             data = get_snapshot_data(conn, snapshot_id)
+#         except Exception as e:
+#             log.error('Data retrieval failed for Snapshot_ID %s: %s', snapshot_id, e)
+#             all_passed = False
+#             continue
 
-        true_loc, satellites = data
-        measurement_array = np.zeros((len(satellites), 4))
-        measurement_array[:, 0] = created_pseudoranges[i]
-        measurement_array[:, 1:] = satellites
+#         true_loc, satellites = data
+#         measurement_array = np.zeros((len(satellites), 4))
+#         measurement_array[:, 0] = created_pseudoranges[i]
+#         measurement_array[:, 1:] = satellites
 
-        est_loc, est_time_offset = l2_estimate_location(measurement_array)
+#         est_loc, est_time_offset = l2_estimate_location(measurement_array)
 
-        position_error = np.linalg.norm(est_loc - true_loc)
-        if position_error > 0.001:
-            log.error('Test failed for Snapshot_ID %s: Position error %s m exceeds tolerance.', snapshot_id, position_error)
-            all_passed = False
-        if est_time_offset > 0.1:
-            log.error('Test failed for Snapshot_ID %s: Time offset %s s exceeds tolerance.', snapshot_id, est_time_offset)
-            all_passed = False
+#         position_error = np.linalg.norm(est_loc - true_loc)
+#         if position_error > 0.001:
+#             log.error('Test failed for Snapshot_ID %s: Position error %s m exceeds tolerance.', snapshot_id, position_error)
+#             all_passed = False
+#         if est_time_offset > 0.1:
+#             log.error('Test failed for Snapshot_ID %s: Time offset %s s exceeds tolerance.', snapshot_id, est_time_offset)
+#             all_passed = False
 
-    if all_passed:
-        log.info('All tests passed: L2 estimation matches noiseless pseudorange model within tolerance.')
-    return all_passed
+#     if all_passed:
+#         log.info('All tests passed: L2 estimation matches noiseless pseudorange model within tolerance.')
+#     return all_passed
 

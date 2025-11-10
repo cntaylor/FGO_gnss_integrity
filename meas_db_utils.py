@@ -19,6 +19,7 @@ The functions here intentionally accept a sqlite3.Connection object named
 import sqlite3
 import logging
 from typing import List, Tuple, Sequence, Optional
+import json
 
 import numpy as np
 
