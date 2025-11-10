@@ -174,22 +174,22 @@ class Simulation():
 			if( os.path.isfile( GNSSFileName ) ):
 
 				self.GNSSDict_ = scipy.io.loadmat( GNSSFileName )
-				print " Loaded GNSS Simulation File "
+				print (" Loaded GNSS Simulation File ")
 			else:
 			
-				print " GNSS File Doesn't Exist %s "%( GNSSFileName )
-				print " Exiting "
+				print (" GNSS File Doesn't Exist %s "%( GNSSFileName ))
+				print (" Exiting ")
 				sys.exit(1)
 
 			IMUFileName = os.path.join( SimDir, 'GeneratedImuData.mat' )
 			if( os.path.isfile( IMUFileName ) ):
 
 				self.IMUDict_ = scipy.io.loadmat( IMUFileName )
-				print " Loaded IMU Simulation File "
+				print (" Loaded IMU Simulation File ")
 
 			else: 
-				print " IMU File Doesn't Exist %s "%( IMUFileName )
-				print " Exiting "
+				print (" IMU File Doesn't Exist %s "%( IMUFileName ))
+				print (" Exiting ")
 				sys.exit(1)
 
 		
@@ -198,11 +198,11 @@ class Simulation():
 			if( os.path.isfile( FlightPathFileName ) ):
 
 				self.FlightPathDict_ = scipy.io.loadmat( FlightPathFileName )
-				print " Loaded Flight Path Simulation File ( truth )"
+				print (" Loaded Flight Path Simulation File ( truth )")
 
 			else:
-				print " Flight Path File Doesn't Exist %s "%( FlightPathFileName )
-				print " Exiting "
+				print (" Flight Path File Doesn't Exist %s "%( FlightPathFileName ))
+				print (" Exiting ")
 				sys.exit(1)
 
 			NoisyOrbitName = os.path.join( SimDir, 'NoisyOrbits1.mat' )
@@ -210,12 +210,12 @@ class Simulation():
 			if( os.path.isfile( NoisyOrbitName )  ):
 
 				self.NoisyOrbitDict_ = scipy.io.loadmat( NoisyOrbitName )
-				print " Loaded Noisy Orbit File "
+				print (" Loaded Noisy Orbit File ")
 
 			elif NoisyOrbitFile:
 
-				print " Noisy Orbit File Doesn't Exist %s "%( NoisyOrbitName )
-				print " Exiting "
+				print (" Noisy Orbit File Doesn't Exist %s "%( NoisyOrbitName ))
+				print (" Exiting ")
 				sys.exit(1)
 
 
@@ -235,13 +235,11 @@ class Simulation():
 		GNSSFileName = os.path.join( self._SimDir, 'gnssFaults.mat' )
 		if( os.path.isfile( GNSSFileName ) ):
                 	self.GNSSDict_ = scipy.io.loadmat( GNSSFileName )
-                        print " Loaded GNSS Simulation File "
-                else:
-
-                       	print " GNSS File Doesn't Exist %s "%( GNSSFileName )
-                        print " Exiting "
-                        sys.exit(1)
-
+                	print ("Loaded GNSS Simulation File")
+		else:
+                	print (" GNSS File Doesn't Exist %s "%( GNSSFileName ))
+                	print (" Exiting ")
+                	sys.exit(1)
 		self.parseGNSS_()
 
 	def loadIMU( self ):
@@ -249,15 +247,14 @@ class Simulation():
 			Method to parse IMU data. Used when auto-loading is turned off.
 		"""
 		IMUFileName = os.path.join( self._SimDir, 'GeneratedImuData.mat' )
-                if( os.path.isfile( IMUFileName ) ):
+		if( os.path.isfile( IMUFileName ) ):
 
-                	self.IMUDict_ = scipy.io.loadmat( IMUFileName )
-                        print " Loaded IMU Simulation File "
+			self.IMUDict_ = scipy.io.loadmat( IMUFileName )
+			print (" Loaded IMU Simulation File ")
 
-                else:
-                        print " IMU File Doesn't Exist %s "%( IMUFileName )
-                        print " Exiting "
-                        sys.exit(1)
+		else:
+			print (" IMU File Doesn't Exist %s "%( IMUFileName ))
+			sys.exit(1)
 
 		self.parseIMU_()
 

@@ -67,7 +67,7 @@ for line in inFile:
 		HPL.append( float( line[3][:-1] ) )  # comma
 		VPL.append( float( line[6] ) )
 	
-	elif line.rfind( fileLineKey['chiSq'] ) > -1 :
+	elif line.rfind( fileLineKey['chiSq'] ) > -1  and (line.rfind('print') ==-1) :
 		line = line.split()
 		chiSqStat.append( float( line[4] ) )
 		EastFail.append( float( line[9] ) )
@@ -75,8 +75,9 @@ for line in inFile:
 		VerticalFail.append( float( line[15] ) )
 		
 	
-	elif line.rfind( fileLineKey['vertAcc'] ) > -1 :
+	elif (line.rfind( fileLineKey['vertAcc'] ) > -1) and (line.rfind('print') ==-1):
 		line = line.split()
+		print(line[3])
 		vertAcc95.append( float( line[3][0:-1] ) ) # comma
 		vertAccFF.append( float( line[8][0:-1] ) ) # comma
 		EMT.append( float( line[10] ) )
@@ -116,15 +117,15 @@ ax[0].set_title('GNSS Advanced RAIM Baseline Algorithm', fontsize=12)
 ax[0].set_ylabel(' # of SVs ') 
 ax[0].grid()
 ax[0].set_ylim([3, 15])
-ax[0].set_xlim([-500, 2000])
-ax[0].legend(['# SV','# GPS','# Galileo'], fontsize = 10, loc =6.0)
+ax[0].set_xlim([-5, 200])
+ax[0].legend(['# SV','# GPS','# Galileo'], fontsize = 10, loc =6)
 
 ax[1].plot(Time,VPL,'r',Time,HPL,'b',Time, vertAcc95,'g',Time, vertAccFF, 'm',Time, EMT, 'c', linewidth=2.0 )
 ax[1].grid()
 ax[1].set_title('Protection Limits and Accuracy Estimates', fontsize=12)
 plt.xlabel('Time (sec)')
 ax[1].set_ylabel('Meters')
-ax[1].legend(['VPL','HPL','Vacc 95%','Vacc 10e-7','EMT'], fontsize = 10, loc = 6.0)
+ax[1].legend(['VPL','HPL','Vacc 95%','Vacc 10e-7','EMT'], fontsize = 10, loc = 6)
 
 
 ax[2].plot(Time, chiSqStat, 'r', \
@@ -136,19 +137,19 @@ ax[2].legend(['All in view Chi^2','# Modes East Fail','# Modes North Fail','# Mo
 
 plt.savefig(sys.argv[1].split('.')[0]+'.png')
 
-fTestStat, axTestStat = plt.subplots(3, sharex=True)
-threshY=[1.0,1.0]
-threshX=[0, 2000]
-for i in range(3):
-	axTestStat[i].plot(threshX,threshY,'k-')
-	print (len(Time))
-	print( len(testStatMats[i]))
-	axTestStat[i].plot(Time,testStatMats[i])
-	axTestStat[i].grid()
-	axTestStat[i].set_ylabel(keys[i])
-	axTestStat[i].set_ylim([0 ,4.0])
+#fTestStat, axTestStat = plt.subplots(3, sharex=True)
+#threshY=[1.0,1.0]
+#threshX=[0, 2000]
+#for i in range(3):
+#	axTestStat[i].plot(threshX,threshY,'k-')
+#	print (len(Time))
+#	print( testStatMats)
+#	axTestStat[i].plot(Time,testStatMats[i])
+#	axTestStat[i].grid()
+#	axTestStat[i].set_ylabel(keys[i])
+#	axTestStat[i].set_ylim([0 ,4.0])
 
-plt.xlabel('Time (s)')
-axTestStat[0].set_title(' Multi-GNSS ARAIM Solution Mode Test Statistics ')
+#plt.xlabel('Time (s)')
+#axTestStat[0].set_title(' Multi-GNSS ARAIM Solution Mode Test Statistics ')
 
-plt.savefig(sys.argv[1].split('.')[0]+'TestStats'+'.png')
+#plt.savefig(sys.argv[1].split('.')[0]+'TestStats'+'.png')
