@@ -18,7 +18,7 @@ The functions here intentionally accept a sqlite3.Connection object named
 
 import sqlite3
 import logging
-from typing import List, Tuple, Sequence, Optional, Union
+from typing import List, Tuple, Sequence, Optional
 
 import numpy as np
 
@@ -26,11 +26,6 @@ log = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
     # Basic configuration when module used directly
     logging.basicConfig(level=logging.INFO)
-
-consts = {
-    'c': 299792458,  # speed of light in meters / second
-    'omega_ecef_eci': 7.292115E-5,  # rotation of earth in radians / second
-}
 
 def get_snapshot_ids(conn: sqlite3.Connection, dataset_name: Optional[str] = None) -> List[int]:
     '''
@@ -62,34 +57,23 @@ def get_snapshot_ids(conn: sqlite3.Connection, dataset_name: Optional[str] = Non
     finally:
         cursor.close()
 
-def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Union[int, Sequence[int]]) -> Optional[Union[Tuple[np.ndarray, np.ndarray], List[Tuple[np.ndarray, np.ndarray]]]]:
+def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Sequence[int]) -> List[Tuple[np.ndarray, np.ndarray]]:
     '''
     Retrieves truth and satellite location data for one or more Snapshot_IDs.
     
-    The return structure depends on the input:
-    - If a single integer Snapshot_ID is passed, returns a single tuple: 
-      (truth_location_numpy_array, satellite_locations_numpy_array).
-    - If a list/tuple of Snapshot_IDs is passed, returns a list of tuples
-      in the same format as the single, ordered by the input Snapshot_ID list.
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+        snapshot_ids (list/tuple of int): The Snapshot_IDs for which to retrieve data.
 
-    Returns None if any required data is missing or if a database error occurs.
+    Returns a list of tuples, where each tuple is: 
+      (truth_location_numpy_array, satellite_locations_numpy_array).
+      - truth_location_numpy_array is a 3-element vector [True_Loc_X, True_Loc_Y, True_Loc_Z].
+      - satellite_locations_numpy_array is an Nx3 array of satellite locations.
     '''
     cursor = conn.cursor()
     try:
         # Normalize input
-        if isinstance(snapshot_ids, int):
-            is_single_id = True
-            id_list = [snapshot_ids]
-        elif isinstance(snapshot_ids, (list, tuple, np.ndarray)):
-            is_single_id = False
-            id_list = list(snapshot_ids)
-        else:
-            raise TypeError('snapshot_ids must be int or sequence of ints')
-
-        if not id_list:
-            raise ValueError('snapshot_ids must be non-empty')
-
-        unique_ids = list(set(id_list))
+        unique_ids = list(set(snapshot_ids))
         placeholders = ', '.join(['?'] * len(unique_ids))
 
         results_map = {sid: {'truth': None, 'sats': []} for sid in unique_ids}
@@ -117,7 +101,7 @@ def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Union[int, Sequenc
                 results_map[sid]['sats'].append(row[1:])
 
         final_output = []
-        for sid in id_list:
+        for sid in snapshot_ids:
             if sid not in results_map or results_map[sid]['truth'] is None:
                 raise ValueError(f'Data not found in database for Snapshot_ID {sid}')
             data = results_map[sid]
@@ -128,7 +112,7 @@ def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Union[int, Sequenc
             sat_array = np.array(sat_list)
             final_output.append((truth_data, sat_array))
 
-        return final_output[0] if is_single_id else final_output
+        return final_output
     except sqlite3.Error as e:
         log.error('An error occurred accessing the database: %s', e)
         raise
@@ -284,78 +268,6 @@ def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int])
     finally:
         cursor.close()
 
-def compute_noiseless_model(conn: sqlite3.Connection, snapshot_ids: Union[int, Sequence[int]]):
-    '''
-    For a given snapshot ID (or list of IDs), retrieve the truth location and satellite locations,
-    then compute the noiseless pseudoranges for each satellite.
-
-    Args:
-        conn (sqlite3.Connection): An active database connection object.
-        snapshot_ids (int or list of int): The Snapshot_ID(s) for which to compute pseudoranges.
-
-    The return structure depends on the input:
-    - If a single integer Snapshot_ID is passed, returns a single numpy array
-        of noiseless pseudoranges for that snapshot.
-    - If a list/tuple of Snapshot_IDs is passed, returns a list of tuples  the same format, ordered by the input Snapshot_ID list,
-    Returns None if any required data is missing or if a database error occurs.
-
-    '''
-    snapshot_list = get_snapshot_data(conn, snapshot_ids)
-
-    def pseudoranges_for_snapshot(snapshot_data):
-        true_loc, satellites = snapshot_data
-        pseudoranges = np.zeros(len(satellites))
-        for i in range(len(satellites)):
-            pseudoranges[i] = compute_noiseless_pseudorange(true_loc, satellites[i])
-        return pseudoranges
-
-    if isinstance(snapshot_ids, int):
-        return pseudoranges_for_snapshot(snapshot_list)
-
-    pseudoranges_list = []
-    for snapshot_data in snapshot_list:
-        pseudoranges_list.append(pseudoranges_for_snapshot(snapshot_data))
-    return pseudoranges_list
-
-def ut_l2_vs_noiseless_model(conn: sqlite3.Connection, sample_ids: Sequence[int]) -> bool:
-    """Simple unit test: generated noiseless pseudoranges should recover truth via L2.
-
-    Returns True when all tested samples are within tolerance.
-    """
-    all_passed = True
-    try:
-        created_pseudoranges = compute_noiseless_model(conn, sample_ids)
-    except Exception as e:
-        log.error('Failed to compute noiseless pseudoranges: %s', e)
-        return False
-
-    for i, snapshot_id in enumerate(sample_ids):
-        try:
-            data = get_snapshot_data(conn, snapshot_id)
-        except Exception as e:
-            log.error('Data retrieval failed for Snapshot_ID %s: %s', snapshot_id, e)
-            all_passed = False
-            continue
-
-        true_loc, satellites = data
-        measurement_array = np.zeros((len(satellites), 4))
-        measurement_array[:, 0] = created_pseudoranges[i]
-        measurement_array[:, 1:] = satellites
-
-        est_loc, est_time_offset = l2_estimate_location(measurement_array)
-
-        position_error = np.linalg.norm(est_loc - true_loc)
-        if position_error > 0.001:
-            log.error('Test failed for Snapshot_ID %s: Position error %s m exceeds tolerance.', snapshot_id, position_error)
-            all_passed = False
-        if est_time_offset > 0.1:
-            log.error('Test failed for Snapshot_ID %s: Time offset %s s exceeds tolerance.', snapshot_id, est_time_offset)
-            all_passed = False
-
-    if all_passed:
-        log.info('All tests passed: L2 estimation matches noiseless pseudorange model within tolerance.')
-    return all_passed
-
 def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Sequence[dict]) -> None:
     '''
     Adds entries to the MC_Samples and Measurements tables for a batch of data.
@@ -483,75 +395,316 @@ def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Seque
         conn.rollback()
         raise e
 
-def l2_estimate_location(measurement_array: np.ndarray) -> Tuple[np.ndarray, float]:
+def create_measurement_database(db_name="measurement_data.db"):
+    """
+    Creates an SQLite database file with the five required tables.
+    """
+    try:
+        # 1. Connect to (or create) the SQLite database file
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
+
+        print(f"Database '{db_name}' connected successfully.")
+
+        # --- 1. SNAPSHOT TABLE ---
+        # Stores true location information for the main object at each time step.
+        # Primary Key is the snapshot.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS Snapshots (
+                Snapshot_ID         INTEGER PRIMARY KEY AUTOINCREMENT,
+                Dataset             TEXT    NOT NULL,
+                Time                REAL    NOT NULL,
+                True_Loc_X          REAL    NOT NULL,
+                True_Loc_Y          REAL    NOT NULL,
+                True_Loc_Z          REAL    NOT NULL
+            );
+        """)
+        print("Table 'Snapshots' created.")
+
+        # --- 2. SATELLITE LOCATION TABLE ---
+        # Stores the location of each satellite for a given Snapshot.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS Satellite_Locations (
+                Snapshot_ID     INTEGER NOT NULL,
+                Satellite_num   INTEGER NOT NULL,
+                Loc_X           REAL    NOT NULL,
+                Loc_Y           REAL    NOT NULL,
+                Loc_Z           REAL    NOT NULL,
+                PRIMARY KEY (Snapshot_ID, Satellite_num),
+                FOREIGN KEY (Snapshot_ID) 
+                    REFERENCES Snapshots (Snapshot_ID)
+            );
+        """)
+        print("Table 'Satellite_Locations' created.")
+        
+        # --- 3. MONTE CARLO RUN TABLE ---
+        # Keeps track of all the "batches" created.  Each entry defines a "set" of samples
+        # (all generated the same way.)  Records the parameters used to generate measurements 
+        # (i.e., noise model).  
+        # We'll use a single unique ID column. The first row (ID=0) will be 'real data'.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS MC_Runs (
+                MC_Run_ID     INTEGER PRIMARY KEY AUTOINCREMENT,
+                Description     TEXT NOT NULL,
+                Parameters_JSON TEXT -- JSON string of the parameters
+            );
+        """)
+        print("Table 'MC_Runs' created.")
+        
+        # Add a placeholder for "real data" (no modification)
+        real_data_params = json.dumps({"simulated": False})
+        cursor.execute("""
+            INSERT INTO MC_Runs (Description, Parameters_JSON)
+            VALUES (?, ?)
+        """, ('Real Data (No Monte Carlo Simulation)', real_data_params))
+        
+        # --- 4. MONTE CARLO SAMPLES TABLE (The link table) ---
+        # Links a specific timestep/snapshot to the MC run used to generate measurements.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS MC_Samples (
+                MC_Sample_ID    INTEGER PRIMARY KEY AUTOINCREMENT,
+                MC_Run_ID       INTEGER NOT NULL,
+                Snapshot_ID     INTEGER NOT NULL,
+
+                -- FK to ensure the time step exists
+                FOREIGN KEY (Snapshot_ID)
+                    REFERENCES Snapshots (Snapshot_ID),
+                
+                -- FK to ensure the parameters exist
+                FOREIGN KEY (MC_Run_ID)
+                    REFERENCES MC_Runs (MC_Run_ID)
+            );
+        """)
+        print("Table 'MC_Samples' created.")
+
+        # --- 5. MEASUREMENTS TABLE ---
+        # Stores the generated pseudorange measurements for each Monte Carlo run.
+        # Composite key ensures a unique entry for each satellite within a run.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS Measurements (
+                MC_Sample_ID    INTEGER NOT NULL,
+                Satellite_num   INTEGER NOT NULL,
+                Pseudorange     REAL    NOT NULL,
+                Is_Outlier      INTEGER NULL,
+
+                PRIMARY KEY (MC_Sample_ID, Satellite_num),
+                
+                -- FK to ensure the MC Run exists
+                FOREIGN KEY (MC_Sample_ID)
+                    REFERENCES MC_Samples (MC_Sample_ID)
+
+            );
+        """)
+        print("Table 'Measurements' created.")
+
+        # Enforce that the MC_sample_ID has the Satellite number being put into Measurements
+        cursor.execute("""
+            -- This syntax is specific to SQLite
+            CREATE TRIGGER enforce_satellite_measurement_integrity
+            BEFORE INSERT ON Measurements
+            FOR EACH ROW
+            BEGIN
+                -- Look up the Snapshot_ID from the MC_Samples table
+                SELECT CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 
+                        FROM Satellite_Locations AS SL
+                        JOIN MC_Samples AS MS ON MS.Snapshot_ID = SL.Snapshot_ID
+                        WHERE 
+                            MS.MC_Sample_ID = NEW.MC_Sample_ID AND 
+                            SL.Satellite_num = NEW.Satellite_num
+                    )
+                    -- If the joint condition is NOT met, RAISE an abort error
+                    THEN RAISE (ABORT, 'Integrity violation: Satellite does not exist for the linked snapshot.')
+                END;
+            END;
+        """)
+
+        store_method_results = True
+        if store_method_results:
+            # --- 6. METHODS TABLE ---
+            # Stores the different estimation methods used.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Estimation_Methods (
+                    Method_ID       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Method_Name     TEXT    NOT NULL,
+                    Parameters_JSON TEXT    -- JSON string of the parameters
+                );
+            """)
+            print("Table 'Estimation_Methods' created.")
+
+            # --- 7. ESTIMATION RESULTS TABLE ---
+            # Stores the results of applying estimation methods to MC samples.
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Estimation_Results (
+                    -- Primary Key Columns
+                    MC_Sample_ID  INTEGER NOT NULL,
+                    Method_ID     INTEGER NOT NULL,
+
+                    -- Required Data (3-element numpy array stored as a BLOB)
+                    Error    BLOB    NOT NULL, -- x,y,z in NED about truth error = estimated - truth
+
+                    -- Optional Data (BLOBs and TEXT)
+                    Results_data    TEXT    NULL,            -- For JSON string (data and/or metadata for BLOB)
+                    Results_blob        BLOB    NULL,        -- For any binary data
+                           
+                    -- Define the Composite Primary Key
+                    PRIMARY KEY (MC_Sample_ID, Method_ID)
+                           
+                    -- Foreign Keys
+                    FOREIGN KEY (MC_Sample_ID)
+                        REFERENCES MC_Samples (MC_Sample_ID),
+                    FOREIGN KEY (Method_ID)
+                        REFERENCES Estimation_Methods (Method_ID)
+                );
+            """)
+            print("Table 'Estimation_Results' created.")
+
+        # Commit all changes and close the connection
+        conn.commit()
+        print("Database creation complete and changes saved.")
+
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def insert_real_data(conn: sqlite3.Connection,
+                     dataset_name: str,
+                     truth_filename: str,
+                     input_filename: str) -> bool:
     '''
-    Take in an Nx4 array where N is the number of satellites for that time. 
-    Columns are [pseudorange, satellite_X, satellite_Y, satellite_Z].
-    XYZ assumed to be ECEF at the time the signal was broadcast
+    Inserts real measurement data into the database from provided files.
 
-    Compute the estimated location and time-offset and return it as a 4-element np.array
-    (loc.x, loc.y, loc.z, time_offset)
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+        dataset_name (str): Name of the dataset (e.g., 'Chemnitz').
+        truth_filename (str): Path to the truth data file (e.g. 'Chemnitz_GT.txt').
+        input_filename (str): Path to the measurement input file. (e.g. 'Chemnitz_Input.txt').
+
+    Returns:
+        bool: True if data insertion was successful, False otherwise.
     '''
-    n_sats = len(measurement_array)
-    assert (n_sats >= 4), "Not enough locations to run L2 estimation.  Need at least 4 satellites"
+    try:
+        cursor = conn.cursor()
+        snapshot_time_sync = {}
 
-    rotation_vec = np.zeros(3)
-    rotation_vec[2] = consts['omega_ecef_eci']
+        with open(truth_filename, 'r') as file:
+            for line in file:
+                parts = line.split()
+                if len(parts) >= 5 and parts[0] == 'point3':
+                    try:
+                        time_value = float(parts[1])
+                        x_loc = float(parts[2])
+                        y_loc = float(parts[3])
+                        z_loc = float(parts[4])
+                    except:
+                        print("Skipping line due to invalid number format: %s", line.strip(), exc_info=True)
+                        continue
+                    cursor.execute("""
+                        INSERT INTO Snapshots (Dataset, Time, True_Loc_x, True_Loc_Y, True_Loc_Z)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (dataset_name, time_value, x_loc, y_loc, z_loc))
+                    new_snapshot_id = cursor.lastrowid
+                    snapshot_time_sync[time_value] = new_snapshot_id
+                else:
+                    print("Invalid line in GT: %s", line.strip(), exc_info=True)
+        conn.commit()
+        print('Created snapshots from ground truth data.')
 
-    # Start the optimization procedure to find the location
-    est_loc = np.zeros(3)
-    est_time_offset = 0.0
-    curr_time_meas = measurement_array.copy()
-    mag_delta = 10000.0
-    while mag_delta > 0.1:  # Iterate till changing less than 0.1 meters
-        # Compute the Jacobian matrix -- unit vectors going from current location to satellite locations
-        # Plus a bias for receiver clock
-        J = np.zeros((n_sats,4))
-        J[:,3] = 1 # clock bias Jacobian
-        # and the residual vector that is being minimized (y)
-        y = np.zeros(n_sats)
-        for i in range(n_sats):
-            diff = est_loc - curr_time_meas[i,1:]
-            J[i,:3] = diff / np.linalg.norm(diff)
-            y[i] = curr_time_meas[i,0] - np.linalg.norm(diff) - est_time_offset
-        # Solve for and apply the delta
-        delta = np.linalg.lstsq(J,y)[0]
-        est_loc += delta[:3]
-        est_time_offset += delta[3]
-        # print('est_loc is ',est_loc, 'time is',est_time_offset, 'delta is',delta)
-        # print('y is',y)
-        # Change the satellite positions from when they were broadcast to when they were received
-        for i in range(n_sats):
-            orig_loc = measurement_array[i,1:]
-            dist_traveled = np.linalg.norm(est_loc - orig_loc)  # + est_time_offset
-            time_traveled = dist_traveled / consts['c']
-            # Rotate the satellite position backwards by the time traveled
-            sat_offset = np.cross(-time_traveled * rotation_vec, orig_loc)
-            curr_time_meas[i,1:] = orig_loc + sat_offset
-        mag_delta = np.linalg.norm(delta) # When small enough, no more iterations
-    return (est_loc, est_time_offset)
+        with open(input_filename, 'r') as file:
+            sat_num = 0
+            snapshot_ID = None
+            curr_time = 0
+            line_counter = 0
+            mc_sample_id = None
 
-def compute_noiseless_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> float:
-    '''
-    Compute the noiseless pseudorange between a true location and a satellite location.
-    Both inputs are 3-element numpy arrays representing ECEF coordinates.
-    Returns the pseudorange as a float.
-    '''
-    # Because it takes time to travel and ECEF changes
-    # over time, find the sat_loc _in the receiving time_ ECEF
-    rotation_vec = np.zeros(3)
-    rotation_vec[2] = consts['omega_ecef_eci']
+            for line in file:
+                line_counter += 1
+                if line_counter % 100 == 0:
+                    print(f"processing line {line_counter} of measurements", end='\r', flush=True)
+                parts = line.split()
+                if len(parts) >= 7 and parts[0] == 'pseudorange3':
+                    try:
+                        time_value = float(parts[1])
+                        pseudorange_meas = float(parts[2])
+                        sat_x = float(parts[4])
+                        sat_y = float(parts[5])
+                        sat_z = float(parts[6])
+                    except:
+                        print("Error parsing pseudorange line")
+                        continue
 
-    distance = np.linalg.norm(true_loc - sat_loc)
-    delta_dist = 10000.0
-    while delta_dist > 0.01:
-        time_traveled = distance / consts['c']
-        sat_offset = np.cross(-time_traveled * rotation_vec, sat_loc)
-        curr_sat_loc = sat_loc + sat_offset
-        new_distance = np.linalg.norm(true_loc - curr_sat_loc)
-        delta_dist = abs(new_distance - distance)
-        distance = new_distance
-    return distance
+                    # Detect a new snapshot
+                    if time_value != curr_time or snapshot_ID is None:
+                        if snapshot_ID is not None:
+                            if sat_num < 4:
+                                print("Warning: Less than 4 satellites found for time", curr_time)
+                                conn.rollback()
+                                cursor.execute("""
+                                    DELETE FROM Snapshots
+                                    WHERE Snapshot_ID = ?
+                                """, (snapshot_ID,))
+                            conn.commit()
+
+                        cursor.execute("BEGIN TRANSACTION")
+                        curr_time = time_value
+                        sat_num = 0
+                        snapshot_ID = snapshot_time_sync.get(curr_time, -1)
+                        if snapshot_ID == -1:
+                            print("Warning, pseudorange measurement found for time", curr_time, "with no associated ground truth")
+                            # Rollback the begun transaction to keep DB consistent
+                            conn.rollback()
+                            snapshot_ID = None
+                            mc_sample_id = None
+                            continue
+                        else:
+                            cursor.execute("""
+                                INSERT INTO MC_Samples (Snapshot_ID, MC_Run_ID)
+                                VALUES (?, ?)
+                            """, (snapshot_ID, 1))
+                            mc_sample_id = cursor.lastrowid
+
+                    # Add satellite location
+                    cursor.execute("""
+                        INSERT INTO Satellite_Locations (Snapshot_ID, Satellite_num, Loc_X, Loc_Y, Loc_Z)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (snapshot_ID, sat_num, sat_x, sat_y, sat_z))
+
+                    # Add measurement
+                    cursor.execute("""
+                        INSERT INTO Measurements (MC_Sample_ID, Satellite_num, Pseudorange)
+                        VALUES (?, ?, ?)
+                    """, (mc_sample_id, sat_num, pseudorange_meas))
+
+                    sat_num += 1
+
+        # Final check for last snapshot
+        if sat_num < 4 and snapshot_ID is not None:
+            print("Warning: Less than 4 satellites found for time", curr_time)
+            conn.rollback()
+            cursor.execute("""
+                DELETE FROM Snapshots
+                WHERE Snapshot_ID = ?
+            """, (snapshot_ID,))
+        conn.commit()
+        print(f"{dataset_name} data successfully added to database.")
+        cursor.execute("SELECT COUNT(*) FROM Snapshots")
+        count = cursor.fetchone()[0]
+        print(f"Total snapshots in database: {count}")
+        return True
+
+    except sqlite3.IntegrityError as e:
+        print(f"\nIntegrity Error: Failed to insert data (perhaps key already exists). {e}")
+        return False
+    except sqlite3.Error as e:
+        print(f"\nAn SQL error occurred: {e}")
+        return False
+    finally:
+        cursor.close()
+
 
 if __name__ == "__main__":
     db_name = "chemnitz_data.db"
@@ -559,7 +712,6 @@ if __name__ == "__main__":
     conn = sqlite3.connect(db_name)
     # Run the unit test for L2 and pseudorange data 
     sample_ids = get_snapshot_ids(conn, dataset_name=dataset_name)
-    test_passed = ut_l2_vs_noiseless_model(conn, sample_ids)
 
 
     try:
@@ -589,49 +741,3 @@ if __name__ == "__main__":
     print('Truth:',truth_data)
     print('Error:',est_loc[0]-truth_data)
 
-
-'''
-Possible test sample for add_MC_samples
-
-
-# --- Example Usage (Requires prior table and data setup) ---
-if __name__ == '__main__':
-    # WARNING: This section is for demonstration and requires a pre-existing 
-    # database file with Snapshots, Satellite_Locations, and MC_Runs (with ID=10) populated.
-    
-    DB_FILE = "tracking_data_option_a.db"
-
-    # Mock Data:
-    # Snapshot 101 has 5 satellites.
-    # Snapshot 102 has 4 satellites.
-    correct_array_101 = np.array([20000.1, 20000.2, 20000.3, 20000.4, 20000.5]) # Size 5
-    correct_array_102 = np.array([30000.1, 30000.2, 30000.3, 30000.4])          # Size 4
-    bad_array_101 = np.array([100.1, 100.2, 100.3]) # Size 3 (should fail validation for 101)
-
-    # List of data to insert
-    data_to_insert = [
-        (101, correct_array_101),
-        (102, correct_array_102),
-        (101, bad_array_101), # This item is intended to fail
-    ]
-    
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        print("Starting insertion test...")
-        # Assume MC_Run_ID 10 exists
-        add_MC_samples(conn, 10, data_to_insert)
-        print("Insertion complete (if no errors were printed).")
-    
-    except ValueError as ve:
-        print(f"\n--- Validation Error Caught ---")
-        print(ve)
-        print("All database changes were rolled back due to this error.")
-    
-    except sqlite3.Error as se:
-        print(f"\n--- Database Error Caught ---")
-        print(se)
-        
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
-'''
