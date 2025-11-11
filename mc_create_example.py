@@ -11,7 +11,7 @@ if __name__ == "__main__":
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
     
-    samples=40000
+    samples=10000
     try:
         # Do we want to create a new MC run or use an old one?
         new_mc_run_id = False
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         # Now to get the data needed to generate measurements
         snapshot_data = mdu.get_snapshot_data(conn, selected_snapshot_ids)
         # Compute noiseless pseudoranges for each sample
-        noiseless_data = cu.noiseless_model(snapshot_data)
+        noiseless_data = cu.compute_list_snapshot_pseudoranges(snapshot_data)
         to_database_list = [None] * len(selected_snapshot_ids)
         # Take each sample and add noise/outliers to generate measurements
         count = 0
