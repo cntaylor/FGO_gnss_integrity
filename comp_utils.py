@@ -4,13 +4,31 @@ from typing import Tuple, Sequence, List
 consts = {
     'c': 299792458,  # speed of light in meters / second
     'omega_ecef_eci': 7.292115E-5,  # rotation of earth in radians / second
+    'earth_rotation_vec': np.array([0.0, 0.0, 7.292115E-5])  # rotation vector of earth
 }
 
-def noiseless_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> float:
+def compute_ecef_at_current_time(sat_loc: np.ndarray, time_offset: float) -> np.ndarray:
+    '''
+    Given a satellite location in ECEF at the time of broadcast, compute its location
+    in ECEF for the current time given by time_offset (in seconds).
+
+    Args:
+        sat_loc: A numpy array of shape (3,) representing the satellite location in ECEF coordinates.
+        time_offset: A float representing the time offset in seconds (distance between location and satellite / consts['c']).
+
+    Returns:
+        A numpy array of shape (3,) representing the satellite location in ECEF coordinates at the current time.
+    '''
+    sat_offset = np.cross(-time_offset * consts['earth_rotation_vec'], sat_loc)
+    new_sat_loc = sat_loc + sat_offset
+    return new_sat_loc
+
+def compute_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> Tuple[float, np.ndarray]:
     '''
     Compute the noiseless pseudorange between a true location and a satellite location.
     Both inputs are 3-element numpy arrays representing ECEF coordinates.
-    Returns the pseudorange as a float.
+    Returns the pseudorange as a float and the satellite location at the time of transmission,
+    but in the ECEF frame of the time of reception.
     '''
     # Because it takes time to travel and ECEF changes
     # over time, find the sat_loc _in the receiving time_ ECEF
@@ -21,62 +39,20 @@ def noiseless_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> float:
     delta_dist = 10000.0
     while delta_dist > 0.01:
         time_traveled = distance / consts['c']
-        sat_offset = np.cross(-time_traveled * rotation_vec, sat_loc)
-        curr_sat_loc = sat_loc + sat_offset
+        curr_sat_loc = compute_ecef_at_current_time(sat_loc, time_traveled)
         new_distance = np.linalg.norm(true_loc - curr_sat_loc)
         delta_dist = abs(new_distance - distance)
         distance = new_distance
-    return distance
+    return distance, curr_sat_loc
 
-def l2_estimate_location(measurement_array: np.ndarray) -> Tuple[np.ndarray, float]:
-    '''
-    Take in an Nx4 array where N is the number of satellites for that time. 
-    Columns are [pseudorange, satellite_X, satellite_Y, satellite_Z].
-    XYZ assumed to be ECEF at the time the signal was broadcast
+def compute_snapshot_pseudoranges(snapshot_data: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+    true_loc, satellites = snapshot_data
+    pseudoranges = np.zeros(len(satellites))
+    for i in range(len(satellites)):
+        pseudoranges[i] = compute_pseudorange(true_loc, satellites[i])[0]
+    return pseudoranges
 
-    Compute the estimated location and time-offset and return it as a tuple with
-    (location (3-element np.array), time in m(float))
-    '''
-    n_sats = len(measurement_array)
-    assert (n_sats >= 4), "Not enough locations to run L2 estimation.  Need at least 4 satellites"
-
-    rotation_vec = np.zeros(3)
-    rotation_vec[2] = consts['omega_ecef_eci']
-
-    # Start the optimization procedure to find the location
-    est_loc = np.zeros(3)
-    est_time_offset = 0.0
-    curr_time_meas = measurement_array.copy()
-    mag_delta = 10000.0
-    while mag_delta > 0.1:  # Iterate till changing less than 0.1 meters
-        # Compute the Jacobian matrix -- unit vectors going from current location to satellite locations
-        # Plus a bias for receiver clock
-        J = np.zeros((n_sats,4))
-        J[:,3] = 1 # clock bias Jacobian
-        # and the residual vector that is being minimized (y)
-        y = np.zeros(n_sats)
-        for i in range(n_sats):
-            diff = est_loc - curr_time_meas[i,1:]
-            J[i,:3] = diff / np.linalg.norm(diff)
-            y[i] = curr_time_meas[i,0] - np.linalg.norm(diff) - est_time_offset
-        # Solve for and apply the delta
-        delta = np.linalg.lstsq(J,y)[0]
-        est_loc += delta[:3]
-        est_time_offset += delta[3]
-        # print('est_loc is ',est_loc, 'time is',est_time_offset, 'delta is',delta)
-        # print('y is',y)
-        # Change the satellite positions from when they were broadcast to when they were received
-        for i in range(n_sats):
-            orig_loc = measurement_array[i,1:]
-            dist_traveled = np.linalg.norm(est_loc - orig_loc)  # + est_time_offset
-            time_traveled = dist_traveled / consts['c']
-            # Rotate the satellite position backwards by the time traveled
-            sat_offset = np.cross(-time_traveled * rotation_vec, orig_loc)
-            curr_time_meas[i,1:] = orig_loc + sat_offset
-        mag_delta = np.linalg.norm(delta) # When small enough, no more iterations
-    return (est_loc, est_time_offset)
-
-def noiseless_model(snapshot_data_list: Sequence[Tuple[np.ndarray, np.ndarray]]) -> List[np.ndarray]:
+def compute_list_snapshot_pseudoranges(snapshot_data_list: Sequence[Tuple[np.ndarray, np.ndarray]]) -> List[np.ndarray]:
     '''
     Take a list of snapshot_data (like returned from get_snapshot_data in meas_db_utils),
         then compute the noiseless pseudoranges for each satellite.
@@ -90,55 +66,110 @@ def noiseless_model(snapshot_data_list: Sequence[Tuple[np.ndarray, np.ndarray]])
         A list of numpy arrays, each containing the noiseless pseudoranges for the corresponding snapshot_data entry.
     '''
 
-
-    def pseudoranges_for_snapshot(snapshot_data):
-        true_loc, satellites = snapshot_data
-        pseudoranges = np.zeros(len(satellites))
-        for i in range(len(satellites)):
-            pseudoranges[i] = noiseless_pseudorange(true_loc, satellites[i])
-        return pseudoranges
-
     pseudoranges_list = []
     for snapshot_data in snapshot_data_list:
-        pseudoranges_list.append(pseudoranges_for_snapshot(snapshot_data))
+        pseudoranges_list.append(compute_snapshot_pseudoranges(snapshot_data))
     return pseudoranges_list
 
-# def ut_l2_vs_noiseless_model(conn: sqlite3.Connection, sample_ids: Sequence[int]) -> bool:
-#     """Simple unit test: generated noiseless pseudoranges should recover truth via L2.
+def compute_residual_and_jacobian(measured_pseudoranges: np.ndarray, 
+                                  estimated_location: np.ndarray, 
+                                  satellite_locations: np.ndarray, 
+                                  time_offset: float,
+                                  compute_Jacobian: bool = False) -> np.ndarray | Tuple[np.ndarray, np.ndarray]:
+    '''
+    Compute the residuals between measured pseudoranges and those computed from an estimated location.
 
-#     Returns True when all tested samples are within tolerance.
-#     """
-#     all_passed = True
-#     try:
-#         created_pseudoranges = compute_noiseless_model(conn, sample_ids)
-#     except Exception as e:
-#         log.error('Failed to compute noiseless pseudoranges: %s', e)
-#         return False
+    Args:
+        measured_pseudoranges: A numpy array of shape (N,) containing the measured pseudoranges.
+        estimated_location: A numpy array of shape (3,) representing the estimated receiver location in ECEF coordinates.
+        satellite_locations: A numpy array of shape (N, 3) representing the satellite locations in ECEF coordinates.
+        time_offset: A float representing the estimated receiver clock bias in meters.
+    Returns:
+        if compute_Jacobian is False, returns a numpy array of shape (N,) containing the residuals for each satellite
+        else a Tuple with (residuals, Jacobian)
+    '''
+    residuals = np.zeros_like(measured_pseudoranges)
+    sat_locs = np.zeros((len(residuals),3))
+    for i in range(len(residuals)):
+        pseudo_range, sat_locs[i] = compute_pseudorange(estimated_location, satellite_locations[i])
+        residuals[i] = measured_pseudoranges[i] - pseudo_range - time_offset
+    if not compute_Jacobian:
+        return residuals
+    J = np.zeros((len(residuals),4)) # columns are x,y,z of location and time_offset
+    J[:,3] = 1
+    for i in range(len(residuals)):
+        diff = estimated_location - sat_locs[i]
+        J[i,:3] = diff/np.linalg.norm(diff)
+    return (residuals, J)
 
-#     for i, snapshot_id in enumerate(sample_ids):
-#         try:
-#             data = get_snapshot_data(conn, snapshot_id)
-#         except Exception as e:
-#             log.error('Data retrieval failed for Snapshot_ID %s: %s', snapshot_id, e)
-#             all_passed = False
-#             continue
+def estimate_l2_location (measurement_array: np.ndarray) -> Tuple[np.ndarray, float]:
+    '''
+    Take in an Nx4 array where N is the number of satellites for that time. 
+    Columns are [pseudorange, satellite_X, satellite_Y, satellite_Z].
+    XYZ assumed to be ECEF at the time the signal was broadcast
 
-#         true_loc, satellites = data
-#         measurement_array = np.zeros((len(satellites), 4))
-#         measurement_array[:, 0] = created_pseudoranges[i]
-#         measurement_array[:, 1:] = satellites
+    Compute the estimated location and time-offset and return it as a tuple with
+    (location (3-element np.array), time in m(float))
+    '''
+    n_sats = len(measurement_array)
+    assert (n_sats >= 4), "Not enough locations to run L2 estimation.  Need at least 4 satellites"
 
-#         est_loc, est_time_offset = l2_estimate_location(measurement_array)
+    # Start the optimization procedure to find the location
+    est_loc = np.zeros(3)
+    est_time_offset = 0.0
+    curr_time_meas = measurement_array.copy()
+    mag_delta = 10000.0
+    while mag_delta > 0.1:  # Iterate till changing less than 0.1 meters
+        # Compute the Jacobian matrix -- unit vectors going from current location to satellite locations
+        # Plus a bias for receiver clock
+        y,J = compute_residual_and_jacobian(measurement_array[:,0], est_loc, 
+                                            curr_time_meas[:,1:],est_time_offset, True)
+        # Solve for and apply the delta
+        delta = np.linalg.lstsq(J,y)[0]
+        est_loc += delta[:3]
+        est_time_offset += delta[3]
+        mag_delta = np.linalg.norm(delta) # When small enough, no more iterations
+    return (est_loc, est_time_offset)
 
-#         position_error = np.linalg.norm(est_loc - true_loc)
-#         if position_error > 0.001:
-#             log.error('Test failed for Snapshot_ID %s: Position error %s m exceeds tolerance.', snapshot_id, position_error)
-#             all_passed = False
-#         if est_time_offset > 0.1:
-#             log.error('Test failed for Snapshot_ID %s: Time offset %s s exceeds tolerance.', snapshot_id, est_time_offset)
-#             all_passed = False
 
-#     if all_passed:
-#         log.info('All tests passed: L2 estimation matches noiseless pseudorange model within tolerance.')
-#     return all_passed
+def test_estimate_l2_roundtrip(snapshot_data: Tuple[np.ndarray, np.ndarray], tol=0.1):
+    """Unit-test helper: For a snapshot_data tuple, build synthetic measurement array
+    from truth+satellites, run estimate_l2_location and assert estimated
+    location is within `tol` meters of truth.
 
+    Args:
+        snapshot_id_list: Tuple with (truth_data, measurement_data)
+        tol: float tolerance in meters
+
+    Returns:
+        None, but raises AssertionError on failure.
+    """
+    truth, sats = snapshot_data
+    pranges = compute_snapshot_pseudoranges(snapshot_data)
+    # Build measurement array Nx4: [pseudorange, sat_x, sat_y, sat_z]
+    meas = np.hstack([pranges.reshape(-1,1), sats])
+    est_loc, est_time = estimate_l2_location(meas)
+    err = np.linalg.norm(est_loc - truth)
+    if err > tol:
+        print(f'est_loc was {est_loc}\ntruth was {truth}')
+        raise AssertionError(f'estimated location error {err:.3f} m exceeds tolerance {tol} m')
+    return
+
+
+if __name__ == "__main__":
+    # Do a test on all to snapshots.  This unit test assumes that a database already exist
+    import meas_db_utils as mdu
+    import sqlite3
+
+    conn = sqlite3.connect("meas_data.db")
+    snapshot_ids = mdu.get_snapshot_ids(conn) # get all snapshots
+    snapshot_data = mdu.get_snapshot_data(conn, snapshot_ids)
+    for i,sd in enumerate(snapshot_data):
+        if i % 100 == 0:
+            print(f"On i {i}", end='\r', flush=True)
+        try:
+            test_estimate_l2_roundtrip(sd)
+        except:
+            print(f'Unit test failed for snapshot ID {snapshot_ids[i]}')
+            print(f'Data was\n{snapshot_data}')
+    print("Unit test completed on comp_utils")

@@ -3,9 +3,8 @@
 Lightweight utilities for accessing measurement and snapshot data from the
 local SQLite schema and a small set of pure-numpy GNSS helper functions.
 
-This module is intentionally small and readable for revision 0. For later
-revisions consider splitting DB access (meas_db) and numeric models
-(meas_model) into separate modules.
+There is a split for all database functions (this file) and all computation
+utilities (comp_utils.py)
 
 Expectations:
 - Database schema contains tables: Snapshots, Satellite_Locations, MC_Samples,
@@ -14,6 +13,9 @@ Expectations:
 
 The functions here intentionally accept a sqlite3.Connection object named
 `conn` and return plain Python / numpy types.
+
+This library (except for the `create_measurement_database` and `add_real_data` functions)
+put outputs to a logger and throws exceptions to make it as library-like as possible.
 """
 
 import sqlite3
@@ -708,37 +710,19 @@ def insert_real_data(conn: sqlite3.Connection,
 
 
 if __name__ == "__main__":
-    db_name = "chemnitz_data.db"
+    db_name = "meas_data.db"
     dataset_name = 'Chemnitz'
     conn = sqlite3.connect(db_name)
     # Run the unit test for L2 and pseudorange data 
     sample_ids = get_snapshot_ids(conn, dataset_name=dataset_name)
-
+    
 
     try:
-        data = get_snapshot_data(conn, 5) # To pick a random one
+        data = get_snapshot_data(conn, list([5]))[0] # To pick a random one
     except Exception as e:
         print(f"Nothing retrieved from database: {e}")
     else:
         true_loc, satellites = data
         print('True loc of ',true_loc)
         print('Satellites:\n',satellites)
-    #from Chemnitz, time = .748
-    test_data = \
-        np.array([  [20433081.468962, 13962834.55507, -10147463.387537, 20062447.537719],
-                    [22741704.38303, 8272953.9491276, 23476859.616882, 10113690.080032],
-                    [19569440.320918, 13695700.569672, 8162502.6130882, 21290888.841658],
-                    [19802243.93382, 21476482.882032, -1924493.9700386, 15398448.047354],
-                    [22146229.904107, 9699671.3804291, -18185112.949658, 16328149.000088],
-                    [23711215.457442, 21584366.047531, -15252931.240547, -506880.06379425],
-                    [23894759.19952, -11182401.657468, 11048376.816374, 21643735.158597],
-                    [23287964.196421, -678474.06015606, -16622774.622281, 20828872.043502],
-                    [24206377.55154, 20908080.276127, 15204464.094461, -6648871.4814316],
-                    [20438005.575857, 14221365.13697, 16453041.738554, 15142841.879854],
-                    [24172290.966639, 25018569.394862, 4653177.0689317, -7970367.3983922]])               
-    est_loc = l2_estimate_location(test_data)
-    print('Estimated',est_loc)
-    truth_data = np.array([3934098.6695941, 902425.34303717, 4922416.4287205])
-    print('Truth:',truth_data)
-    print('Error:',est_loc[0]-truth_data)
-
+    
