@@ -47,9 +47,7 @@ def compute_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> Tuple[floa
 
 def compute_snapshot_pseudoranges(snapshot_data: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
     true_loc, satellites = snapshot_data
-    pseudoranges = np.zeros(len(satellites))
-    for i in range(len(satellites)):
-        pseudoranges[i] = compute_pseudorange(true_loc, satellites[i])[0]
+    pseudoranges = np.array([compute_pseudorange(true_loc, s)[0] for s in satellites])
     return pseudoranges
 
 def compute_list_snapshot_pseudoranges(snapshot_data_list: Sequence[Tuple[np.ndarray, np.ndarray]]) -> List[np.ndarray]:
@@ -66,9 +64,7 @@ def compute_list_snapshot_pseudoranges(snapshot_data_list: Sequence[Tuple[np.nda
         A list of numpy arrays, each containing the noiseless pseudoranges for the corresponding snapshot_data entry.
     '''
 
-    pseudoranges_list = []
-    for snapshot_data in snapshot_data_list:
-        pseudoranges_list.append(compute_snapshot_pseudoranges(snapshot_data))
+    pseudoranges_list = [compute_snapshot_pseudoranges(sd) for sd in snapshot_data_list]
     return pseudoranges_list
 
 def compute_residual_and_jacobian(measured_pseudoranges: np.ndarray, 
