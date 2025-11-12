@@ -63,7 +63,7 @@ while i < 2000:
 		satFault1 = random.randint(0,19)
 		failSat1 = satFault1
 		#failSat1.append( satFault1 )
-		data.GNSS.carrierSmoothPR[i,satFault1] = data.GNSS.carrierSmoothPR[i,satFault1] +100
+		data.GNSS.carrierSmoothPR[i,satFault1] = data.GNSS.carrierSmoothPR[i,satFault1] +30
 		
 		print("Error injected at i = %d on satellite %d"%(i,satFault1))
 
@@ -72,7 +72,7 @@ while i < 2000:
 		if (chanceFault2 < .1):
 			satFault2 = random.randint(0,19)
 			failSat2 = satFault2
-			data.GNSS.carrierSmoothPR[i,satFault2] = data.GNSS.carrierSmoothPR[i,satFault2] + 100
+			data.GNSS.carrierSmoothPR[i,satFault2] = data.GNSS.carrierSmoothPR[i,satFault2] + 30
 			print ("Error injected at i = %d on satellite %d"%(i,satFault2))
 		else:
 			failSat2 = None

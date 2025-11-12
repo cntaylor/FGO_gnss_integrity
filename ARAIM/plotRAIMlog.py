@@ -111,7 +111,7 @@ for i in range(3):
 	testStatMats.append(testStats)
 
 
-f, ax = plt.subplots(3, sharex=True)
+f, ax = plt.subplots(4, sharex=True)
 ax[0].plot(Time,nSat,'k',Time,nGPS,'b',Time,nGAL,'g--', linewidth=2.0)
 ax[0].set_title('GNSS Advanced RAIM Baseline Algorithm', fontsize=12)
 ax[0].set_ylabel(' # of SVs ') 
@@ -128,13 +128,15 @@ ax[1].set_ylabel('Meters')
 ax[1].legend(['VPL','HPL','Vacc 95%','Vacc 10e-7','EMT'], fontsize = 10, loc = 6)
 
 
-ax[2].plot(Time, chiSqStat, 'r', \
-		Time, EastFail, 'ko',Time, NorthFail,'g+',Time, VerticalFail, 'b*',linewidth=2.0)
+ax[2].plot(Time, chiSqStat, 'r')
 ax[2].set_ylim([-.1,50])
-ax[2].set_title('All in view Failure Stat and Soln Seperation Mode Component Failures', fontsize=12)
+ax[2].set_title('All in view Failure Stat ', fontsize=12)
 ax[2].grid()
-ax[2].legend(['All in view Chi^2','# Modes East Fail','# Modes North Fail','# Modes Vertical Fail'], fontsize = 10, loc = 6)
-
+ax[2].legend(['All in view Chi^2'], fontsize = 10, loc = 6)
+ax[3].plot( Time, EastFail, 'ko',Time, NorthFail,'g+',Time, VerticalFail, 'b*',linewidth=2.0)
+ax[3].legend(['# Modes East Fail','# Modes North Fail','# Modes Vertical Fail'],fontsize = 10, loc = 6)
+ax[3].set_title('Component Failure Modes', fontsize=12)
+ax[3].grid()
 plt.savefig(sys.argv[1].split('.')[0]+'.png')
 
 #fTestStat, axTestStat = plt.subplots(3, sharex=True)
