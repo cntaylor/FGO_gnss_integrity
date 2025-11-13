@@ -1,0 +1,4 @@
+- [ ] Take output of FGO, convert to navigation so can evalute horizontal & vertical levels (r3f.dcm_ecef_to_navigation(lat,lon) should give you the correct DCM).  Generate HL and VL from FGO.  (Need to figure out Chi-squared value and then multiply proper covariance term by that)
+- [ ] Figure out outputs of ARAIM so FGO can generate the same
+- [ ] Debug large number of entries causing an error problem
+- [ ] Get GNC working
