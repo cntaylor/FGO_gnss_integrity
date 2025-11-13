@@ -328,24 +328,24 @@ def validate_estimation(conn, run_id, dataset_name, fgo_params):
     # Print out the statistics
     print("\n--- STATISTICAL RESULTS ---")
     print(f"Total Error (Magnitude) Statistics:")
-    print(f"  Average Error:   L2: {l2_avg_error:.3f} meters, FGO: {fgo_avg_error:.3f} meters")
-    print(f"  Std Dev Error:   L2: {l2_std_dev_error:.3f} meters, FGO: {fgo_std_dev_error:.3f} meters")
-    print(f"  Maximum Error:   L2: {l2_max_error:.3f} meters, FGO: {fgo_max_error:.3f} meters")
+    print(f"  Average Error:   L2: {l2_avg_error:7.3f} meters, FGO: {fgo_avg_error:7.3f} meters")
+    print(f"  Std Dev Error:   L2: {l2_std_dev_error:7.3f} meters, FGO: {fgo_std_dev_error:7.3f} meters")
+    print(f"  Maximum Error:   L2: {l2_max_error:7.3f} meters, FGO: {fgo_max_error:7.3f} meters")
     print("-" * 30)
     print(f"Axis-by-Axis Error Statistics L2 (Mean, Std, Max_Abs):")
-    print(f"| Axis | Mean Error | Std Dev | Max Abs Error |")
-    print(f"|:----:|:----------:|:-------:|:-------------:|")
-    print(f"|  X   | {l2_avg_error_xyz[0]:.3f} | {l2_std_dev_error_xyz[0]:.3f} | {l2_max_error_xyz[0]:.3f} |")
-    print(f"|  Y   | {l2_avg_error_xyz[1]:.3f} | {l2_std_dev_error_xyz[1]:.3f} | {l2_max_error_xyz[1]:.3f} |")
-    print(f"|  Z   | {l2_avg_error_xyz[2]:.3f} | {l2_std_dev_error_xyz[2]:.3f} | {l2_max_error_xyz[2]:.3f} |")
-    print("-" * 30)
+    print(f"| Axis | Mean Error |  Std Dev  | Max Abs Error |")
+    print(f"|:----:|:----------:|:---------:|:-------------:|")
+    print(f"|  X   | {l2_avg_error_xyz[0]:10.3f} | {l2_std_dev_error_xyz[0]:9.3f} | {l2_max_error_xyz[0]:13.3f} |")
+    print(f"|  Y   | {l2_avg_error_xyz[1]:10.3f} | {l2_std_dev_error_xyz[1]:9.3f} | {l2_max_error_xyz[1]:13.3f} |")
+    print(f"|  Z   | {l2_avg_error_xyz[2]:10.3f} | {l2_std_dev_error_xyz[2]:9.3f} | {l2_max_error_xyz[2]:13.3f} |")
+    print("-" * 50)
     print(f"Axis-by-Axis Error Statistics FGO (Mean, Std, Max_Abs):")
-    print(f"| Axis | Mean Error | Std Dev | Max Abs Error |")
-    print(f"|:----:|:----------:|:-------:|:-------------:|")
-    print(f"|  X   | {fgo_avg_error_xyz[0]:.3f} | {fgo_std_dev_error_xyz[0]:.3f} | {fgo_max_error_xyz[0]:.3f} |")
-    print(f"|  Y   | {fgo_avg_error_xyz[1]:.3f} | {fgo_std_dev_error_xyz[1]:.3f} | {fgo_max_error_xyz[1]:.3f} |")
-    print(f"|  Z   | {fgo_avg_error_xyz[2]:.3f} | {fgo_std_dev_error_xyz[2]:.3f} | {fgo_max_error_xyz[2]:.3f} |")
-    print("-" * 30)
+    print(f"| Axis | Mean Error |  Std Dev  | Max Abs Error |")
+    print(f"|:----:|:----------:|:---------:|:-------------:|")
+    print(f"|  X   | {fgo_avg_error_xyz[0]:10.3f} | {fgo_std_dev_error_xyz[0]:9.3f} | {fgo_max_error_xyz[0]:13.3f} |")
+    print(f"|  Y   | {fgo_avg_error_xyz[1]:10.3f} | {fgo_std_dev_error_xyz[1]:9.3f} | {fgo_max_error_xyz[1]:13.3f} |")
+    print(f"|  Z   | {fgo_avg_error_xyz[2]:10.3f} | {fgo_std_dev_error_xyz[2]:9.3f} | {fgo_max_error_xyz[2]:13.3f} |")
+    print("-" * 50)
 
     # 6. Plotting (Matplotlib is required)
     
@@ -431,9 +431,9 @@ if __name__ == '__main__':
 
         # The parameters requested by the user:
         MC_RUN_ID = 1      # Assuming 1 is your real data or target run
-        DATASET = 'Chemnitz'  # Example dataset name
+        DATASET = 'Berlin_Potsdamer'  # Example dataset name
         test_fgo_params = {
-            "rcf" : "Huber",  # Robust cost function
+            "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
             "gnc" : False,    # Graduated non-convexity
             "max_iters" : 50, # How many Gauss-Newton steps to allow
