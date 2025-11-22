@@ -159,7 +159,7 @@ class KFIntegrityMonitor():
 
 
 
-	def determineNoncentralChiSqrDistributionAlphaParams( R ):
+	def determineNoncentralChiSqrDistributionAlphaParams( self, R ):
 		"""
 			Determine the alpha parameters of the noncentralized 
 			chi-squared distribution that represents the current time
@@ -225,7 +225,16 @@ class MultiHypothesisSolutionSeperation():
 		self._dx0 = np.matrix( np.zeros(5) )
 		self._dx0wls = np.matrix( np.zeros(5) )
 		self._dx0N = np.matrix( np.zeros(5) )
-		
+		# Set of parameters ot make this somewhat comparable with ARAIM
+		# If simple is on, it just sets all covariance to the same
+		# value: self._Cint_simples
+		self._simpleCovMode = False
+		self._Cint_simple = 10.**2.0
+		# If simple is on, it just sets all fault probabilities to the same value
+		self._simpleFaultMode = False
+		self._fault_prob = 0.01
+		# To enable making it similar to FGO, allow the VPL to just turn off the effect of bias
+		self._useBiasForPL = True
 		
 		
 	
@@ -370,16 +379,18 @@ class MultiHypothesisSolutionSeperation():
 		allEvents = set( allEvents )
 		faultMode = set( faultMode )
 		eventsNotInMode = allEvents - faultMode
-
-		for event in list(eventsNotInMode):
-			# determine if the fault is a sat fault or constellation fault
-			# if it is a number, this refers to a PRN
-			if not isinstance( event, str ) :
-				ind = utils.find( self._satList, lambda x: x == event )[0]
-				pFaultMode = pFaultMode *self._pSats[ind] 
-			else: # otherwise, it is a constellation failure
-				ind = utils.find( self._constellationList, lambda x: x == event )[0]
-				pFaultMode = pFaultMode * self._pConstellation[ind]
+		if self._simpleFaultMode:
+			pfaultMode = self._fault_prob
+		else:
+			for event in list(eventsNotInMode):
+				# determine if the fault is a sat fault or constellation fault
+				# if it is a number, this refers to a PRN
+				if not isinstance( event, str ) :
+					ind = utils.find( self._satList, lambda x: x == event )[0]
+					pFaultMode = pFaultMode *self._pSats[ind] 
+				else: # otherwise, it is a constellation failure
+					ind = utils.find( self._constellationList, lambda x: x == event )[0]
+					pFaultMode = pFaultMode * self._pConstellation[ind]
 
 		return pFaultMode, eventsNotInMode
 
@@ -411,8 +422,11 @@ class MultiHypothesisSolutionSeperation():
 		output:
 			a Weight matrix that zeros out certain elements of missing sats/constellations
 		"""
-		# intiialize the fault mode weight elements to inverse of the all in view covariance 
-		WfaultMode = 1./np.array(self._Cint)
+		if self._simpleCovMode:
+			WfaultMode = np.ones(len(svID)) * 1./self._Cint_simple
+		else:
+			# intiialize the fault mode weight elements to inverse of the all in view covariance 
+			WfaultMode = 1./np.array(self._Cint)
 		deletedIndices = []
 		# loop over all sats in list, zeroing elements not found in the fault mode
 		for i in range( len(svID) ) :
@@ -569,6 +583,10 @@ class MultiHypothesisSolutionSeperation():
 		self._Nsat = np.shape( satsXYZ )[0]
 
 		for i in range( self._Nsat ):
+			if self._simpleCovMode:
+				self._Cint.append( self._Cint_simple )
+				self._Cacc.append( self._Cint_simple )
+				continue
 			elv = navutils.calcElAz( satsXYZ[i] , usrPos )[0]
 			if svID[i] <= 37:
 				userError = self.__gpsUserErrorModel( elv )
@@ -779,6 +797,7 @@ class MultiHypothesisSolutionSeperation():
 		outputs:
 			HPL - horizontal protection limit (m)
 			VPL - vertical protection limit (m)
+			exclude_list - list of satelites that are excluded
 		"""
 		
 		count = 0
@@ -787,6 +806,7 @@ class MultiHypothesisSolutionSeperation():
 		#Time = 10
 		minChi = 0
 		ExcIndex = 0
+		exclude_list = []
 		# Step #0 apply nominmal to delta
 		print(self._dx0[0,0:3])
 		print(self._usrPos)
@@ -856,6 +876,8 @@ class MultiHypothesisSolutionSeperation():
 		
 		if (count2 != 0):
 
+			exclude_list.append(ExcIndex)
+
 			print(self.numOfModesFailed)
 
 			print ("Faulted Satellite: %d"%(ExcIndex))
@@ -890,6 +912,7 @@ class MultiHypothesisSolutionSeperation():
 
 			minChi = 0
 			ExcIndex = 0
+
 			#self.numOfModesFailed = [ 0, 0, 0] # re-initialize mode failure counters
 			#self.testStats = [ [], [], [] ]
 
@@ -935,7 +958,7 @@ class MultiHypothesisSolutionSeperation():
 			#Time = Time + 10
 
 			if (count3 != 0):
-
+				exclude_list.append(ExcIndex)
 				print(self.numOfModesFailed)
 
 				print ("Faulted Satellite: %d"%(ExcIndex))
@@ -1031,14 +1054,14 @@ class MultiHypothesisSolutionSeperation():
 			VPL, VPLlow = self.__calculateComponentProtectionLimit( b0, enuCov0, \
 				bk, enuCovk, Tk, pFaultk, 2)
 			HPL = np.sqrt( EPLup**2 + NPLup**2 )
-
+			
 			self.__calcuateFFSolnAccuracyAndEMT(G0, W0, Tk, pFaultk, count, ExcIndex)
 
 			#Time = Time + 10
 
 		
 
-		return HPL, VPL
+		return HPL, VPL, exclude_list
 
 
 
