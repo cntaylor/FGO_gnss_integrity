@@ -6,7 +6,7 @@
 
 import numpy as np
 import math as m
-import Const
+import ARAIM.Const as Const
 
 def dop(satXYZ, usrPos):
     G = hmat(satXYZ, usrPos)
@@ -24,7 +24,7 @@ def calcElAz(satXYZ, staXYZ):
 def calcElAzBody(satXYZ, usrXYZ):
     enuLOS=xyz2enu(satXYZ,usrXYZ)
     R = [satXYZ - usrXYZ]
-    R = np.matrix(R)
+    R = np.array(R)
     Rt = R.T
     llh = xyz2llh(usrXYZ)
     Cen = earth2Nav(llh[0],llh[1])
@@ -53,7 +53,7 @@ def hmat(satPos,usrPos):
 	
 	for i in range(N):
 		tmpvec = satPos[i,:]-usrPos
-		h[i,0:3]=tmpvec/np.norm(tmpvec)
+		h[i,0:3]=tmpvec/np.linalg.norm(tmpvec)
 
 	return h
 	
@@ -128,10 +128,9 @@ def xyz2enu(xyz,org):
 	cphi=np.cos(phi)
 	slam=np.sin(lam)
 	clam=np.cos(lam)
-	R=np.mat( [[-slam, clam, 0],[ -sphi*clam, -sphi*slam, cphi],[ cphi*clam, cphi*slam, sphi]])
+	R=np.array( [[-slam, clam, 0],[ -sphi*clam, -sphi*slam, cphi],[ cphi*clam, cphi*slam, sphi]])
 	sol=np.dot(R,diff.T)
-	sol=sol.getA1()
-	return sol.tolist()
+	return sol
 
 def enu2xyz(enu,org):
 	orgllh = xyz2llh(org)
@@ -141,12 +140,11 @@ def enu2xyz(enu,org):
 	cphi=np.cos(phi)
 	slam=np.sin(lam)
 	clam=np.cos(lam)
-	R=np.mat( [[-slam, clam, 0],[ -sphi*clam, -sphi*slam, cphi],[ cphi*clam, cphi*slam, sphi]])
+	R=np.array( [[-slam, clam, 0],[ -sphi*clam, -sphi*slam, cphi],[ cphi*clam, cphi*slam, sphi]])
 	Rinv=np.linalg.inv(R)
 	diffXYZ=np.dot(Rinv,enu)
-	sol= np.add(org, diffXYZ)
-	sol=sol.getA1()
-	return sol.tolist() 
+	sol= org + diffXYZ
+	return sol
 
 def earth2Inertial(t,to=0,omega=Const.Earth().RotationRate):
 
@@ -160,7 +158,7 @@ def earth2Inertial(t,to=0,omega=Const.Earth().RotationRate):
 	c = np.cos(omega*(t-to))
 	s = np.sin(omega*(t-to))
 
-	C = np.mat( [[c,s,0],\
+	C = np.array( [[c,s,0],\
 		     [s,c,c],\
 	             [0,0,1]] )
 	return C
@@ -178,7 +176,7 @@ def earth2Nav(lat,lon):
 	slat = np.sin(lat)
 	clon = np.cos(lon)
 	clat = np.cos(lat)
-	C = np.mat( [[-slat*clon,-slat*slon,clat],\
+	C = np.array( [[-slat*clon,-slat*slon,clat],\
 		     [-slon,clon,0],\
 		     [-clat*clon,-clat*slon,-slat]] )
 	return C
@@ -188,7 +186,7 @@ def ENU():
 
 	""" NED to ENU Transformation """
 
-	C = np.mat( [[0,1,0],\
+	C = np.array( [[0,1,0],\
 		     [1,0,0],\
 		     [0,0,-1]] )
 

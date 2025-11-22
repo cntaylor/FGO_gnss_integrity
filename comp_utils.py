@@ -4,10 +4,10 @@ from typing import Tuple, Sequence, List
 consts = {
     'c': 299792458,  # speed of light in meters / second
     'omega_ecef_eci': 7.292115E-5,  # rotation of earth in radians / second
-    'earth_rotation_vec': np.array([0.0, 0.0, 7.292115E-5])  # rotation vector of earth
+    'earth_rotation_vec': np.array([0.0, 0.0, 7.292115E-5]),  # rotation vector of earth
     'f1' :  1575.42e6, # Hz
-    'f2' = 1227.60e6, # Hz
-    'f5' = 1176.45e6, # Hz
+    'f2' : 1227.60e6, # Hz
+    'f5' : 1176.45e6 # Hz
 }
 
 def compute_ecef_at_current_time(sat_loc: np.ndarray, time_offset: float) -> np.ndarray:

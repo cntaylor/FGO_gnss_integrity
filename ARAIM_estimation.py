@@ -81,13 +81,24 @@ def init_ARAIM (params : dict) -> None:
         ARAIM_class._fault_prob = params.get("fault_prob", 0.01)
     if params.get("araim_use_bias_for_PL", False):
         ARAIM_class._useBiasForPL = False # Default is true
-    if params.get("max_bias", False):
-        ARAIM_class._maxBiasNom = params.get("max_bias", 0.1)
+    if type(params.get("max_bias", False)) is float:
+        ARAIM_class._maxBiasNom = [params.get("max_bias", 0.1)] * 110 # max num_sats?
+    ARAIM_class._satList = list(np.arange(1,111))
     # Do I need to do a "ISM update" for things to work? It would also set URE and RUA values, 
     # plus pSats and pConstellation  Avoided if in simple mode?
 
 def snapshot_ARAIM (measurements: np.ndarray
-                  ) -> Tuple[float, float, List[int]]:
+                  ) -> Tuple[np.ndarray, float|None, List[int], Tuple[float,float]]:
+    '''
+    Run ARAIM on a snapshot of measurements
+
+    Returns:
+        est_location: A numpy array of shape (3,) representing the estimated location in ECEF coordinates.
+        time_offset: A float representing the estimated time offset in meters.
+        outlier_info: A list of integers representing the IDs of the satellites excluded in the estimation.
+        PLs: A tuple of floats representing the HPL and VPL calculated by ARAIM
+    '''
+    global ARAIM_class
     if ARAIM_class is None:
         print('To use snapshot_ARAIM, should really run initialization first')
         print('with the parameters that you want.  Doing some default parameters for now.')
@@ -105,6 +116,7 @@ def snapshot_ARAIM (measurements: np.ndarray
                 / cu.consts['c'] 
         new_sat_locs[i] = cu.compute_ecef_at_current_time(measurements[i][1:], time_offset)
     # Run ARAIM.  I have no idea of the SV numbers, so random things get passed in
-    return ARAIM_class.ARAIM(len(new_sat_locs), new_sat_locs,
+    HPL, VPL, outlier_info =ARAIM_class.ARAIM(len(new_sat_locs), new_sat_locs,
                       measurements[:,0], 
                       np.arange(1,len(measurements)+1))
+    return ARAIM_class.getUpdatedPos(), None, outlier_info, (HPL, VPL)

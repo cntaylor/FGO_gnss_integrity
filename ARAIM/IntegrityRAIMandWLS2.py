@@ -11,12 +11,23 @@ import scipy.linalg
 import scipy.interpolate
 import scipy.stats
 import itertools
+import math
 
 # wvu png modules, will need AFIT equivalents
-import Transform as navutils
-import Const
-import utils
-import Model
+import ARAIM.Transform as navutils
+import ARAIM.Const as Const
+import ARAIM.Model as Model
+
+# Using this function so ARAIM.utils is not needed
+def find(a, func):
+	""" 
+	implementation of a matlab-style find function for python
+	source: http://stackoverflow.com/questions/5957470/matlab-style-find-function-in-python
+
+	"""
+
+	return [i for (i, val) in enumerate(a) if func(val)]
+
 
 class KFIntegrityMonitor():
 	
@@ -155,7 +166,7 @@ class KFIntegrityMonitor():
 		if( self.printer ):
 			print( self.hashString )
 			print ("Residual Covariance Matrix")
-			print( self.residualCovariance )
+			print( self.residualCov )
 
 
 
@@ -170,7 +181,7 @@ class KFIntegrityMonitor():
 		"""
 
 		measErrCovSqrtInv = scipy.linalg.sqrtm( np.linalg.inv( R ) )
-		sqrtResidualCov = scipy.linalg.sqrtm( self.resdiualCovariance )
+		sqrtResidualCov = scipy.linalg.sqrtm( self.residualCovariance )
 
 		[U, s, V] = np.linalg.svd( measErrCovSqrtInv*sqrtResidualCov )
 
@@ -277,8 +288,8 @@ class MultiHypothesisSolutionSeperation():
 		self._upperBoundNFaultMax.append(self._pThresh)
 
 		for nFail in range(1,self._maxNFaultConsidered):
-			self._lowerBoundNFaultMax.append( ( np.math.factorial(nFail) * self._pThresh )**(1.0/nFail ) )
-			self._upperBoundNFaultMax.append( ( np.math.factorial(nFail+1) * self._pThresh )**(1.0/(nFail+1)) )
+			self._lowerBoundNFaultMax.append( ( math.factorial(nFail) * self._pThresh )**(1.0/nFail ) )
+			self._upperBoundNFaultMax.append( ( math.factorial(nFail+1) * self._pThresh )**(1.0/(nFail+1)) )
 
 	def __determineNFaultMax(self):
 		""" 
@@ -321,9 +332,9 @@ class MultiHypothesisSolutionSeperation():
 			nConstMissing = 0
 			constDropped = []
 			for i in range( len(self._constellationsTracked) ):
-				if not utils.find( combination, lambda x: x == self._constellationsTracked[i] ):
-					 nConstMissing = nConstMissing + 1.0
-					 constDropped.append( self._constellationsTracked[i] )
+				if not find( combination, lambda x: x == self._constellationsTracked[i] ):
+					nConstMissing = nConstMissing + 1.0
+					constDropped.append( self._constellationsTracked[i] )
 			# consider the fact that if a const fails, we have to drop all of those sats
 			nSatsOrig=0 # number of sats originally in this mode
 			nSatsDropped =0 # number of sats dropped from mode due to constellation failure
@@ -343,7 +354,7 @@ class MultiHypothesisSolutionSeperation():
 
 
 			if (nConstMissing >= self._nConstTracked ):
-				print ("Deleting Failure Mode from Consideration becayse all constellations would be failed ")
+				# print ("Deleting Failure Mode from Consideration becayse all constellations would be failed ")
 				p, combo = self.__probabilityOfFaultMode( combination, svID)
 				self._pUnobservable = self._pUnobservable + p
 				continue
@@ -380,16 +391,16 @@ class MultiHypothesisSolutionSeperation():
 		faultMode = set( faultMode )
 		eventsNotInMode = allEvents - faultMode
 		if self._simpleFaultMode:
-			pfaultMode = self._fault_prob
+			pFaultMode = self._fault_prob
 		else:
 			for event in list(eventsNotInMode):
 				# determine if the fault is a sat fault or constellation fault
 				# if it is a number, this refers to a PRN
 				if not isinstance( event, str ) :
-					ind = utils.find( self._satList, lambda x: x == event )[0]
+					ind = find( self._satList, lambda x: x == event )[0]
 					pFaultMode = pFaultMode *self._pSats[ind] 
 				else: # otherwise, it is a constellation failure
-					ind = utils.find( self._constellationList, lambda x: x == event )[0]
+					ind = find( self._constellationList, lambda x: x == event )[0]
 					pFaultMode = pFaultMode * self._pConstellation[ind]
 
 		return pFaultMode, eventsNotInMode
@@ -402,7 +413,7 @@ class MultiHypothesisSolutionSeperation():
 		"""
 		r = self._NFaultMax + 1
 
-		self._pMultiFaultNotMonitored = ( ( self._pFaultTotal )**r ) / np.math.factorial( r )
+		self._pMultiFaultNotMonitored = ( ( self._pFaultTotal )**r ) / math.factorial( r )
 
 	def __probabilityFaultNotMonitored(self):
 		"""
@@ -430,14 +441,14 @@ class MultiHypothesisSolutionSeperation():
 		deletedIndices = []
 		# loop over all sats in list, zeroing elements not found in the fault mode
 		for i in range( len(svID) ) :
-			if not utils.find( faultMode, lambda x: x==svID[i]):
+			if not find( faultMode, lambda x: x==svID[i]):
 				deletedIndices.append(i)
 				WfaultMode[i] = 0.0
 
 		# now loop over contellationsTracked, zeroing weights if sat is in a constellation not present
 		for i in range( len(self._constellationsTracked) ):
 			# if we can't find a constellation, zero the contribution of all sats from that constellation
-			if not utils.find( faultMode, lambda x: x== self._constellationsTracked[i] ):
+			if not find( faultMode, lambda x: x== self._constellationsTracked[i] ):
 				for j in range(len(svID)):
 					# we know that self.constellationsTracked_[i] is an excluded one,
 					# so zero the weight of all the sats that match this constellation
@@ -471,10 +482,10 @@ class MultiHypothesisSolutionSeperation():
 		# fault mode vector
 		for i in range( len(self._constellationsTracked) ):
 			# if we cant find this constellation, remove associated column from G
-			if not utils.find( faultMode, lambda x: x == self._constellationsTracked[i] ):
+			if not find( faultMode, lambda x: x == self._constellationsTracked[i] ):
 				# get the column number, by finding index of this constellation
 				# in the list of constellations tracked + 3 for the position partials
-				colsToDelete.append( 3.0 + utils.find( self._constellationsTracked, \
+				colsToDelete.append( 3.0 + find( self._constellationsTracked, \
 					lambda x: x == self._constellationsTracked[i] )[0] )
 				
 		# now loop through all sats in fault mode, and make sure the cover all contellations
@@ -489,8 +500,8 @@ class MultiHypothesisSolutionSeperation():
 
 		# check that each constellation in lists tracked is covered by the sats in the fault mode
 		for constellation in self._constellationsTracked:
-			if not utils.find( constInFaultMode, lambda x: x == constellation ):
-				colsToDelete.append( 3.0 + utils.find( self._constellationsTracked,lambda x:x == constellation)[0] )
+			if not find( constInFaultMode, lambda x: x == constellation ):
+				colsToDelete.append( 3.0 + find( self._constellationsTracked,lambda x:x == constellation)[0] )
 
 		# get unique cols to delete
 		colsToDelete = list( set( colsToDelete ) )
@@ -624,7 +635,7 @@ class MultiHypothesisSolutionSeperation():
 		"""
 			Return user position solution with dx0 applied
 		"""
-		enuDelta = -self._dx0[0,0:3]
+		enuDelta = np.array(-self._dx0[0,0:3]).ravel()
 		return navutils.enu2xyz(enuDelta,self._usrPos)
 
 	def getPosWLS( self ):
@@ -687,7 +698,9 @@ class MultiHypothesisSolutionSeperation():
 			26th International Technical Meeting of The Satellite Division of the 
 			Institute of Navigation (ION GNSS 2013). 2013.
 		"""
-		r,QT = utils.null( H.T )
+		u, s, v = np.linalg.svd(H.T)
+		rank = (s > 1E-5*s[0]).sum() #magic number alert!!! :)
+		QT = v[rank:].T.copy()
 
 		p = QT.T*OMC
 
@@ -1113,6 +1126,13 @@ class MultiHypothesisSolutionSeperation():
 		Implementation of Eq. 68 in Blanch 2015
 		"""
 		self._nSatsTracked = len(svID)
+
+		if self._simpleFaultMode:
+			self._nConstTracked = 1
+			self._constellationsTracked = ['GPS']
+			self._pNoFault = (1- self._fault_prob)**len(svID)
+			return
+
 		[self._nConstTracked, self._constellationsTracked] =	\
 				self.__determineNumberOfConstThisEpoch(svID)
 
@@ -1121,7 +1141,7 @@ class MultiHypothesisSolutionSeperation():
 
 		for i in range(self._nSatsTracked):
 			# find index in ISM vector that corresponds to each tracked prn
-			ind = utils.find( self._satList, lambda x: x == svID[i] )[0]
+			ind = find( self._satList, lambda x: x == svID[i] )[0]
 			
 			# multiplicatively reduce probability of no faults
 			self._pNoFault = self._pNoFault * ( 1.0 - self._pSats[ind] )
@@ -1129,7 +1149,7 @@ class MultiHypothesisSolutionSeperation():
 		for i in range(self._nConstTracked):
 			# find index of ISM vector that corresponds to
 			# each tracked constellation
-			ind = utils.find( self._constellationList, \
+			ind = find( self._constellationList, \
 					lambda x: x == self._constellationsTracked[i] )[0]
 			
 			self._pNoFault = self._pNoFault * ( 1.0 - self._pConstellation[ind] )
@@ -1141,7 +1161,9 @@ class MultiHypothesisSolutionSeperation():
 		This is finding the 'u' for the phiThreshFunction in Eqs. 75-77
 		in Blanch et al. 2015.
 		"""
-
+		if self._simpleFaultMode:
+			self._pFaultTotal = self._fault_prob
+			return
 		
 		# initialize to zero
 		self._pFaultTotal = 0.0
@@ -1152,13 +1174,13 @@ class MultiHypothesisSolutionSeperation():
 
 		for i in range(self._nSatsTracked):
 			# find the index of this sat in the ISM vector that corresponse to this prn
-			ind = utils.find( self._satList, lambda x: x == svID[i])[0]
+			ind = find( self._satList, lambda x: x == svID[i])[0]
 			# sum up
 			self._pFaultTotal = self._pFaultTotal + self._pSats[ind]
 
 		for i in range(self._nConstTracked):
 			# find the index of the ISM vector that corresponds to the probability of constellation failure
-			ind = utils.find( self._constellationList, lambda x: x == self._constellationsTracked[i] )[0]
+			ind = find( self._constellationList, lambda x: x == self._constellationsTracked[i] )[0]
 			self._pFaultTotal = self._pFaultTotal + self._pConstellation[ind] 
 
 	
@@ -1166,11 +1188,11 @@ class MultiHypothesisSolutionSeperation():
 		""" 
 		Given an svID number, return the constellation, 'GPS','GLO','GAL' or 'BDS'
 		"""
-		if utils.find( [svID], lambda x: x <= 37):
+		if find( [svID], lambda x: x <= 37):
 			return 'GPS'
-		if utils.find( [svID], lambda x: x> 37 and x<=61):
+		if find( [svID], lambda x: x> 37 and x<=61):
 			return 'GLO'
-		if utils.find( [svID], lambda x: x>70 and x<=106):
+		if find( [svID], lambda x: x>70 and x<=106):
 			return 'GAL'
 
 	def __determineNumberOfConstThisEpoch( self, svID ):
@@ -1181,17 +1203,17 @@ class MultiHypothesisSolutionSeperation():
 		nConst = 0
 		constellationsTracked = []
 		
-		if utils.find( svID, lambda x: x <= 38):
+		if find( svID, lambda x: x <= 38):
 			# gps is being tracked
 			nConst = nConst + 1
 			constellationsTracked.append('GPS')
 
-		if utils.find( svID, lambda x: x>37 and x<=61):
+		if find( svID, lambda x: x>37 and x<=61):
 			# glonass is being tracked
 			nConst = nConst + 1
 			constellationsTracked.append('GLO')
 
-		if utils.find( svID, lambda x: x>70 and x<=106):
+		if find( svID, lambda x: x>70 and x<=106):
 			# galileo is being tracked
 			nConst = nConst + 1
 			constellationsTracked.append('GAL')
@@ -1238,7 +1260,7 @@ class MultiHypothesisSolutionSeperation():
 			# find the correct colum for the clock bias partial
 			# by comparingthe constellation of this sat
 			# against the list of constellations tracked this epoch
-			ind = utils.find( self._constellationsTracked, \
+			ind = find( self._constellationsTracked, \
 					lambda x: x == self.__svid2constellation( svID[j] ) )[0] + 3
 			G[j,ind] = 1.0
 
@@ -1260,17 +1282,17 @@ class MultiHypothesisSolutionSeperation():
 			      psuedoranges {np.array}(# Sat by 1)
 		"""	
 
-		dum,nSat = np.shape(measuredPR)
-		computed = np.zeros( ( nSat, 1) )
-		omc = np.zeros( (nSat,1) )
+		nSat = len(measuredPR)
+		computed = np.zeros( nSat )
+		omc = np.zeros( nSat )
 		
 		for i in range( nSat ):
-			computed[i,0] = np.linalg.norm( np.array( satsXYZ[i,:] ) - np.array( usrPos ) ) \
+			computed[i] = np.linalg.norm( np.array( satsXYZ[i,:] ) - np.array( usrPos ) ) \
 					+ clockNom \
 					+ Model.dryTrop(satsXYZ[i,:],usrPos)
-			omc[i,0] = measuredPR[0,i] - computed[i,0]
+			omc[i] = measuredPR[i] - computed[i]
 		
-		return omc
+		return np.matrix(omc).T
 
 	def __wlsAllInViewMatrix(self, G , svID, OMC, count, ExcIndex):
 		"""
@@ -1302,13 +1324,13 @@ class MultiHypothesisSolutionSeperation():
 		enuCov = np.diag( self._AllInViewInvGTWG )
 		S0=self._AllInViewInvGTWG*G.T*W
 		x,y=np.shape(S0)
-		self._dx0[0,0:x] = np.array(S0*OMC).T
+		self._dx0[0,0:x] = (S0 *OMC).T
 		print(self._dx0[0,0:x])
 		# determine worst-case impact from biases Eq. 16 from Blanch
 		b = np.zeros(3)
 		for q in range(3):
 			for i in range( len(svID) ):
-				ind = utils.find( self._satList, lambda x: x == svID[i] )[0]
+				ind = find( self._satList, lambda x: x == svID[i] )[0]
 				b[q] = b[q] + abs(S0[q,i])*self._maxBiasNom[ind]
 		
 		return enuCov, b, W
@@ -1426,7 +1448,7 @@ class MultiHypothesisSolutionSeperation():
 
 			x,y=np.shape(Sk)
 			S0=self._AllInViewInvGTWG*G.T*W
-			dx = ( Sk - S0[0:x,0:y] )* OMC
+			dx = ( Sk - S0[0:x,0:y] ) * OMC
 
 
 
@@ -1451,7 +1473,7 @@ class MultiHypothesisSolutionSeperation():
 		b = np.zeros(3)
 		for q in range(3):
 			for i in range( len(svID) ):
-				ind = utils.find( self._satList, lambda x: x == svID[i] )[0]
+				ind = find( self._satList, lambda x: x == svID[i] )[0]
 				b[q] = b[q] + abs(Sk[q,i])*self._maxBiasNom[ind]
 
 		
@@ -1700,7 +1722,7 @@ class MultiHypothesisSolutionSeperation():
 				( self.__pExceed(PLupInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex) \
 				- self.__pExceed(PLlowInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex) )
 
-		PLlowBound = PLlowInit + (np.math.log( pHMIAdj ) - np.math.log( self.__pExceed( PLlowInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex ) ) )* \
+		PLlowBound = PLlowInit + (np.log( pHMIAdj ) - np.log( self.__pExceed( PLlowInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex ) ) )* \
 				(PLupInit - PLlowInit)/( self.__pExceed( PLupInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex ) - \
 				self.__pExceed( PLlowInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex ) )
 
