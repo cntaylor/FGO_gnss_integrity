@@ -619,6 +619,13 @@ class MultiHypothesisSolutionSeperation():
 			Return user position solution
 		"""
 		return self._usrPos
+	
+	def getUpdatedPos( self ):
+		"""
+			Return user position solution with dx0 applied
+		"""
+		enuDelta = -self._dx0[0,0:3]
+		return navutils.enu2xyz(enuDelta,self._usrPos)
 
 	def getPosWLS( self ):
 		"""
@@ -703,7 +710,7 @@ class MultiHypothesisSolutionSeperation():
 		self._usrPosN = navutils.enu2xyz(enuDeltaN,self._usrPosN)
 		print(self._usrPosN)
 		print ("WLSN User Position %5.4f %5.4f %5.4f"%(self._usrPosN[0],self._usrPosN[1],self._usrPosN[2]))
-		self._clockNomN = self._clockNomN - self._dx0N[0,1]
+		self._clockNomN = self._clockNomN - self._dx0N[0,3]
 		
 
 		# Step #2 All in view solution
@@ -743,7 +750,7 @@ class MultiHypothesisSolutionSeperation():
 		self._usrPosWLS = navutils.enu2xyz(enuDeltawls,self._usrPosWLS)
 		print(self._usrPosWLS)
 		print ("WLS User Position %5.4f %5.4f %5.4f"%(self._usrPosWLS[0],self._usrPosWLS[1],self._usrPosWLS[2]))
-		self._clockNomWLS = self._clockNomWLS - self._dx0wls[0,1]
+		self._clockNomWLS = self._clockNomWLS - self._dx0wls[0,3]
 		
 
 		# Step #2 All in view solution
@@ -816,7 +823,7 @@ class MultiHypothesisSolutionSeperation():
 		enuDelta.append( -self._dx0[0,2] )
 		self._usrPos = navutils.enu2xyz(enuDelta,self._usrPos)
 		print(self._usrPos)
-		self._clockNom = self._clockNom - self._dx0[0,1]
+		self._clockNom = self._clockNom - self._dx0[0,3] #was ,1.  I think that was an error
 
 		# Step #1 determine Cint and Cacc
 		self.__calculateAllInViewCovariance(satsXYZ, self._usrPos, svID)
