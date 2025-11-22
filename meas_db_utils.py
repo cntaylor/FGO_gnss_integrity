@@ -271,6 +271,17 @@ def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int])
     finally:
         cursor.close()
 
+def get_dataset_names(conn: sqlite3.Connection) -> List[str]:
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT DISTINCT Dataset FROM Snapshots")
+        return [row[0] for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        log.error('An error occurred during dataset name retrieval: %s', e)
+        raise
+    finally:
+        cursor.close()
+
 def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Sequence[dict]) -> None:
     '''
     Adds entries to the MC_Samples and Measurements tables for a batch of data.
