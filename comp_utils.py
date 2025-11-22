@@ -5,6 +5,9 @@ consts = {
     'c': 299792458,  # speed of light in meters / second
     'omega_ecef_eci': 7.292115E-5,  # rotation of earth in radians / second
     'earth_rotation_vec': np.array([0.0, 0.0, 7.292115E-5])  # rotation vector of earth
+    'f1' :  1575.42e6, # Hz
+    'f2' = 1227.60e6, # Hz
+    'f5' = 1176.45e6, # Hz
 }
 
 def compute_ecef_at_current_time(sat_loc: np.ndarray, time_offset: float) -> np.ndarray:
@@ -127,6 +130,19 @@ def estimate_l2_location (measurement_array: np.ndarray) -> Tuple[np.ndarray, fl
         mag_delta = np.linalg.norm(delta) # When small enough, no more iterations
     return (est_loc, est_time_offset)
 
+def compute_satellite_elevation (receiver_loc: np.ndarray, sat_loc: np.ndarray) -> float:
+    '''
+    Compute the elevation angle between a receiver and a satellite in radians
+
+    Args:
+        receiver_loc: A numpy array of shape (3,) representing the receiver location in ECEF coordinates.
+        sat_loc: A numpy array of shape (3,) representing the satellite location in ECEF coordinates.
+    '''
+    receiver_lat_lon = r3f.ecef_to_geodetic(receiver_loc)
+    C_n_ecef = r3f.dcm_ecef_to_navigation(receiver_lat_lon[0], receiver_lat_lon[1])
+    diff_ecef = sat_loc-receiver_loc
+    sat_loc_n = np.dot(C_n_ecef, diff_ecef)
+    return np.arctan2(sat_loc_n[2], np.linalg.norm(sat_loc_n))
 
 def test_estimate_l2_roundtrip(snapshot_data: Tuple[np.ndarray, np.ndarray], tol=0.1):
     """Unit-test helper: For a snapshot_data tuple, build synthetic measurement array

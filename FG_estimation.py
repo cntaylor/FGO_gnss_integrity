@@ -1,7 +1,5 @@
-import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
-import meas_db_utils as mdu
 import comp_utils as cu
 import r3f
 
@@ -15,10 +13,10 @@ import r3f
 #  3.  Weighting used for each satellite (to allow further processing to decide how well faults were detected)
 #
 
-default_fgo_params = {
+default_params = {
     "rcf" : "Huber",  # Robust cost function
     "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
-    "gnc" : True,    # Graduated non-convexity
+    "gnc" : False,    # Graduated non-convexity
     "max_iters" : 50, # How many Gauss-Newton steps to allow
     "tolerance" : 1e-4
 }
@@ -134,7 +132,7 @@ def get_gnc_rcf_weights(residuals, params):
     else:
         raise ValueError(f"Unknown RCF '{rcf}'. Supported: Huber, Cauchy, GemanMcClure, trunc_Gauss")
     
-def snapshot_fgo(measurements, params = default_fgo_params):
+def snapshot_fgo(measurements, params = default_params):
     """
     Take in an array of measurements (Nx4 numpy array with columns: pseudorange, sat_X, sat_Y, sat_Z)
     and perform the FGO snapshot estimation.  
@@ -150,28 +148,28 @@ def snapshot_fgo(measurements, params = default_fgo_params):
     if params["gnc"]: # Not currently working!
         print("GNC not implemented yet...")
         pass
-        # Use the Li-Ta approach of setting the original "weight" high enough that all residuals are in the 
-        # convex region of the robust cost function, then gradually reduce it.
-        # Find the maximum residual from the initial estimate
-        if params["rcf"] not in ("GemanMcClure", "Geman-McClure", "Geman_McClure"):
-            raise ValueError("GNC is only implemented for Geman-McClure RCF in this example.")
-        y = np.zeros(len(measurements))
-        for i,meas in enumerate(measurements):
-            est_pseudorange = mdu.noiseless_pseudorange(est_location, meas[1:4])
-            y[i] = meas[0] - (est_pseudorange + time_offset)
-        max_residual = np.max(np.abs(y))/params['base_sigma']
-        # Equation 23 from Li-Ta paper
-        theta = 3 * max_residual**2 / params.get("geman_c", 2.0)**2
-        # To perform GNC, will have two loops.  Outer loop reduces theta, inner loop does IRLS
-        while theta > 1.:
-            # Inner loop: Perform IRLS
-            weights = get_rcf_weights(y, params)
-            # Update residuals
-            for i,meas in enumerate(measurements):
-                est_pseudorange = mdu.noiseless_pseudorange(est_location, meas[1:4])
-                y[i] = meas[0] - (est_pseudorange + time_offset)
-            max_residual = np.max(np.abs(y))/params['base_sigma']
-            theta = 3 * max_residual**2 / params.get("geman_c", 2.0)**2
+        # # Use the Li-Ta approach of setting the original "weight" high enough that all residuals are in the 
+        # # convex region of the robust cost function, then gradually reduce it.
+        # # Find the maximum residual from the initial estimate
+        # if params["rcf"] not in ("GemanMcClure", "Geman-McClure", "Geman_McClure"):
+        #     raise ValueError("GNC is only implemented for Geman-McClure RCF in this example.")
+        # y = np.zeros(len(measurements))
+        # for i,meas in enumerate(measurements):
+        #     est_pseudorange = mdu.noiseless_pseudorange(est_location, meas[1:4])
+        #     y[i] = meas[0] - (est_pseudorange + time_offset)
+        # max_residual = np.max(np.abs(y))/params['base_sigma']
+        # # Equation 23 from Li-Ta paper
+        # theta = 3 * max_residual**2 / params.get("geman_c", 2.0)**2
+        # # To perform GNC, will have two loops.  Outer loop reduces theta, inner loop does IRLS
+        # while theta > 1.:
+        #     # Inner loop: Perform IRLS
+        #     weights = get_rcf_weights(y, params)
+        #     # Update residuals
+        #     for i,meas in enumerate(measurements):
+        #         est_pseudorange = mdu.noiseless_pseudorange(est_location, meas[1:4])
+        #         y[i] = meas[0] - (est_pseudorange + time_offset)
+        #     max_residual = np.max(np.abs(y))/params['base_sigma']
+        #     theta = 3 * max_residual**2 / params.get("geman_c", 2.0)**2
     else: # not GNC!
         delta_mag = 1000.
         curr_time_offset = time_offset
@@ -198,10 +196,18 @@ def snapshot_fgo(measurements, params = default_fgo_params):
                 curr_time_offset += delta[3]
                 delta_mag = np.linalg.norm(delta)
             else:
-                print("Problem with robuts FGO ... No longer of sufficient rank!  Quitting prematurely")
+                print("Problem with robust FGO ... No longer of sufficient rank!  Quitting prematurely")
                 delta_mag = 0.
             num_iters += 1
-    return est_location, time_offset, weights, np.linalg.inv(Jp.T@Jp)
+    #Compute the covariance
+    # First, need lat/lon
+    lat_lon = r3f.ecef_to_geodetic(est_location)
+    # Then the rotation from ECEF to ENU
+    C_n_ecef = r3f.dcm_ecef_to_navigation( lat_lon[0], lat_lon[1], ned=False)
+    rot_mat = np.zeros((4,4))
+    rot_mat[:3,:3] = C_n_ecef
+    rot_mat[3,3] = 1
+    return est_location, time_offset, weights, rot_mat@np.linalg.inv(Jp.T@Jp)@rot_mat.T
 
 # def run_fgo_estimation(db_name, run_id):
 #     """
@@ -380,7 +386,7 @@ def validate_estimation(conn, run_id, dataset_name, fgo_params):
     axes[1, 1].grid(True)
     fig.legend()
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=(0, 0, 1, 0.96))
     
     plt.figure()
     plt.plot(l2_time_offsets, 'r.-', label='L2 Time Offsets')
@@ -423,8 +429,11 @@ def validate_estimation(conn, run_id, dataset_name, fgo_params):
 # --- As a test, run a dataset and compare the RCF results with the basic L2 optimization ---
 
 if __name__ == '__main__':
+    import meas_db_utils as mdu
+    import sqlite3
+
+
     DB_FILE = "meas_data.db"
-    
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
