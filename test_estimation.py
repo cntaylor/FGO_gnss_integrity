@@ -3,20 +3,24 @@ import sqlite3
 import numpy as np
 import comp_utils as cu
 import r3f
-import time
 from FG_estimation import snapshot_fgo
 from ARAIM_estimation import snapshot_ARAIM, init_ARAIM
 import matplotlib.pyplot as plt
+import pickle
 
-def validate_estimation(conn, run_id, dataset_name, test_params):
+#TODO:  change from dataset_name to mc_run?  Probably get rid fo plotting in that case
+def validate_estimation(conn, run_id, dataset_name, test_params, methods,
+                        results_file = "results.pkl",
+                        errors_file = "errors.pkl",
+                        plot_res = True):
     """
-    Test out FGO with params and compare it against L2 and truth
+    Test out different techniques compare it against L2 and truth
     """
     print(f"--- Starting Validation for Run {run_id} ({dataset_name}) ---")
 
     # 1. Get MC_Sample_IDs
     # Assumes MC_run_ID=1 is the 'real data' run as specified.
-    sample_ids = mdu.get_mc_sample_ids(conn, run_id, dataset_name=dataset_name)  # Limit to first 100 for speed
+    sample_ids = mdu.get_mc_sample_ids(conn, run_id, dataset_name=dataset_name)[:15]  # Change here for smaller sets for testing
     
     if not sample_ids:
         print("No MC samples found for the specified run and dataset.")
@@ -46,25 +50,44 @@ def validate_estimation(conn, run_id, dataset_name, test_params):
 
     # 3. Run Estimation and Store Results
     init_ARAIM(test_params)
-    l2_estimated_locations = np.zeros((len(measurements_list),3))
-    l2_time_offsets = np.zeros(len(measurements_list))
-    fgo_estimated_locations = np.zeros_like(l2_estimated_locations)
-    fgo_time_offsets = np.zeros_like(l2_time_offsets)
-    fgo_outlier_info = [None] * len(measurements_list) # For speed
-    fgo_covariance = [None] * len(measurements_list) # For speed
-    
-    araim_est_locs = np.zeros_like(l2_estimated_locations)
-    araim_outlier_info = [None] * len(measurements_list) # For speed
-    araim_PLs = [None] * len(measurements_list) # For speed
+    results = {method: [] for method in methods}
+    results["truth"] = [truth_list] # All other methods have a list of multiple entries.  This makes
+                                    # truth look more like the others (easier to plot among other things)
+    results["L2"] = []
+    results["L2"].append(np.zeros((len(measurements_list),3))) # position estimates
+    results["L2"].append(np.zeros(len(measurements_list))) # time offsets
+    for method in methods:
+        if method == "ARAIM":
+            # ARAIM doesn't return the timing, so it's a special case
+            results["ARAIM"].append(np.zeros((len(measurements_list),3)))
+            results["ARAIM"].append(None) #timing
+            results["ARAIM"].append([None] * len(measurements_list)) #outlier info
+            results["ARAIM"].append([None] * len(measurements_list)) # PLs
+        else:
+            results[method].append(np.zeros((len(measurements_list),3))) # position estimates
+            results[method].append(np.zeros(len(measurements_list))) # timing offsets
+            results[method].append([None] * len(measurements_list)) # outlier info
+            results[method].append([None] * len(measurements_list)) # covariance
+            results[method].append(np.zeros(len(measurements_list),dtype=int)) # num_iterations
+            
+
     for i,measurements_array in enumerate(measurements_list):
         l2_est_loc = cu.estimate_l2_location(measurements_array)
-        l2_estimated_locations[i] = l2_est_loc[0]
-        l2_time_offsets[i] = l2_est_loc[1]
-        fgo_estimated_locations[i], fgo_time_offsets[i],\
-           fgo_outlier_info[i], fgo_covariance[i] = \
-           snapshot_fgo(measurements_array,params=test_params)
-        araim_est_locs[i], _, \
-            araim_outlier_info[i], araim_PLs[i] = snapshot_ARAIM(measurements_array)
+        results["L2"][0][i] = l2_est_loc[0] # position
+        results["L2"][1][i] = l2_est_loc[1] # timing offset
+        for method in methods:
+            if method == "ARAIM":
+                results[method][0][i], _, \
+                    results[method][2][i], results[method][3][i] = \
+                    snapshot_ARAIM(measurements_array)
+            else:
+                print("Running method:", method)
+                tmp_params = test_params.copy()
+                tmp_params["rcf"] = method
+                results[method][0][i], results[method][1][i], \
+                    results[method][2][i], results[method][3][i], \
+                    results[method][4][i] = \
+                    snapshot_fgo(measurements_array,params=tmp_params)
         
         
     # Convert lists to NumPy arrays for easy calculation
@@ -73,149 +96,66 @@ def validate_estimation(conn, run_id, dataset_name, test_params):
     # 4. Compute Errors
     
     # Calculate difference in X, Y, Z axes
-    l2_errors_xyz = l2_estimated_locations - truth_array  # (N x 3) array of errors
-    fgo_errors_xyz = fgo_estimated_locations - truth_array  # (N x 3) array of errors
-    araim_errors_xyz = araim_est_locs - truth_array  # (N x 3) array of errors
+    result_errors = dict.fromkeys(methods)
+    result_errors["L2"] = np.array([x for x in results["L2"][0]]).reshape(-1,3) - truth_array.reshape(-1,3)
+    for method in methods:
+        result_errors[method] = np.array([x for x in results[method][0]]).reshape(-1,3) - truth_array
 
-    # Calculate Total Error (Magnitude or Euclidean Distance)
-    # sqrt(E_x^2 + E_y^2 + E_z^2)
-    l2_total_error = np.linalg.norm(l2_errors_xyz, axis=1) # (N x 1) array of total errors
-    fgo_total_error = np.linalg.norm(fgo_errors_xyz, axis=1) # (N x 1) array of total errors
-    araim_total_error = np.linalg.norm(araim_errors_xyz, axis=1) # (N x 1) array of total errors
-
-    # 5. Compute Statistics
-
-    l2_avg_error = np.mean(l2_total_error)
-    l2_std_dev_error = np.std(l2_total_error)
-    l2_max_error = np.max(l2_total_error)
-    fgo_avg_error = np.mean(fgo_total_error)
-    fgo_std_dev_error = np.std(fgo_total_error)
-    fgo_max_error = np.max(fgo_total_error)
-    araim_avg_error = np.mean(araim_total_error)
-    araim_std_dev_error = np.std(araim_total_error)
-    araim_max_error = np.max(araim_total_error)
-
-    # Errors on each axis for individual statistics
-    l2_avg_error_xyz = np.mean(l2_errors_xyz, axis=0)
-    l2_std_dev_error_xyz = np.std(l2_errors_xyz, axis=0)
-    l2_max_error_xyz = np.max(np.abs(l2_errors_xyz), axis=0) # Max absolute error
-    fgo_avg_error_xyz = np.mean(fgo_errors_xyz, axis=0)
-    fgo_std_dev_error_xyz = np.std(fgo_errors_xyz, axis=0)
-    fgo_max_error_xyz = np.max(np.abs(fgo_errors_xyz), axis=0) # Max absolute error
-    araim_avg_error_xyz = np.mean(araim_errors_xyz, axis=0)
-    araim_std_dev_error_xyz = np.std(araim_errors_xyz, axis=0)
-    araim_max_error_xyz = np.max(np.abs(araim_errors_xyz), axis=0) # Max absolute error
-
-    # Print out the statistics
+    # Calculate Total Error (Euclidean Distance)
+    total_errors = {}
+    for key in result_errors:
+        total_errors[key] = np.linalg.norm(result_errors[key],axis=1) # (N x 1) array of total errors
+    
+    # 5. Print out the statistics
     print("\n--- STATISTICAL RESULTS ---")
     print(f"Total Error (Magnitude) Statistics:")
-    print(f"  Average Error:   L2: {l2_avg_error:7.3f} meters, FGO: {fgo_avg_error:7.3f} meters, ARAIM: {araim_avg_error:7.3f} meters")
-    print(f"  Std Dev Error:   L2: {l2_std_dev_error:7.3f} meters, FGO: {fgo_std_dev_error:7.3f} meters, ARAIM: {araim_std_dev_error:7.3f} meters")
-    print(f"  Maximum Error:   L2: {l2_max_error:7.3f} meters, FGO: {fgo_max_error:7.3f} meters, ARAIM: {araim_max_error:7.3f} meters")
-    print("-" * 30)
-    print(f"Axis-by-Axis Error Statistics L2 (Mean, Std, Max_Abs):")
-    print(f"| Axis | Mean Error |  Std Dev  | Max Abs Error |")
-    print(f"|:----:|:----------:|:---------:|:-------------:|")
-    print(f"|  X   | {l2_avg_error_xyz[0]:10.3f} | {l2_std_dev_error_xyz[0]:9.3f} | {l2_max_error_xyz[0]:13.3f} |")
-    print(f"|  Y   | {l2_avg_error_xyz[1]:10.3f} | {l2_std_dev_error_xyz[1]:9.3f} | {l2_max_error_xyz[1]:13.3f} |")
-    print(f"|  Z   | {l2_avg_error_xyz[2]:10.3f} | {l2_std_dev_error_xyz[2]:9.3f} | {l2_max_error_xyz[2]:13.3f} |")
-    print("-" * 50)
-    print(f"Axis-by-Axis Error Statistics FGO (Mean, Std, Max_Abs):")
-    print(f"| Axis | Mean Error |  Std Dev  | Max Abs Error |")
-    print(f"|:----:|:----------:|:---------:|:-------------:|")
-    print(f"|  X   | {fgo_avg_error_xyz[0]:10.3f} | {fgo_std_dev_error_xyz[0]:9.3f} | {fgo_max_error_xyz[0]:13.3f} |")
-    print(f"|  Y   | {fgo_avg_error_xyz[1]:10.3f} | {fgo_std_dev_error_xyz[1]:9.3f} | {fgo_max_error_xyz[1]:13.3f} |")
-    print(f"|  Z   | {fgo_avg_error_xyz[2]:10.3f} | {fgo_std_dev_error_xyz[2]:9.3f} | {fgo_max_error_xyz[2]:13.3f} |")
-    print("-" * 50)
-    print(f"Axis-by-Axis Error Statistics ARAIM (Mean, Std, Max_Abs):")
-    print(f"| Axis | Mean Error |  Std Dev  | Max Abs Error |")
-    print(f"|:----:|:----------:|:---------:|:-------------:|")
-    print(f"|  X   | {araim_avg_error_xyz[0]:10.3f} | {araim_std_dev_error_xyz[0]:9.3f} | {araim_max_error_xyz[0]:13.3f} |")
-    print(f"|  Y   | {araim_avg_error_xyz[1]:10.3f} | {araim_std_dev_error_xyz[1]:9.3f} | {araim_max_error_xyz[1]:13.3f} |")
-    print(f"|  Z   | {araim_avg_error_xyz[2]:10.3f} | {araim_std_dev_error_xyz[2]:9.3f} | {araim_max_error_xyz[2]:13.3f} |")
+    for key in result_errors:
+        print(f"  {key:>12} :   Average: {np.mean(total_errors[key]):7.3f} meters,",\
+              f" Std Dev: {np.std(total_errors[key]):7.3f} meters,",
+              f" Max: {np.max(total_errors[key]):7.3f} meters")
 
-    # 6. Plotting (Matplotlib is required)
-    
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    fig.suptitle(f'Estimation Error Analysis (Run {run_id}, Dataset: {dataset_name})', fontsize=16)
-    # Plot 1: X-Axis Error
-    axes[0, 0].plot(l2_errors_xyz[:, 0], label='L2', color='r')
-    axes[0, 0].plot(fgo_errors_xyz[:, 0], label='FGO', color='b', linestyle='--')
-    axes[0, 0].plot(araim_errors_xyz[:, 0], label='araim', color='g', linestyle='--')
-    axes[0, 0].set_title('Error in X-Axis')
-    axes[0, 0].set_ylabel('Error (meters)')
-    axes[0, 0].grid(True)
+    # 6.  Save all the results to a file
+    with open(results_file, 'wb') as f:
+        pickle.dump(results, f)
+    with open(errors_file, 'wb') as f:
+        pickle.dump(total_errors, f)
 
-    # Plot 2: Y-Axis Error
-    axes[0, 1].plot(l2_errors_xyz[:, 1], label='L2', color='r')
-    axes[0, 1].plot(fgo_errors_xyz[:, 1], label='FGO', color='b', linestyle='--')
-    axes[0, 1].plot(araim_errors_xyz[:, 1], label='araim', color='g', linestyle='--')
-    axes[0, 1].set_title('Error in Y-Axis')
-    axes[0, 1].grid(True)
+    # 7. Plotting (Matplotlib is required)
+    # plot errors
+    if plot_res:
+        for key in result_errors:
+            plt.plot(total_errors[key], label=key)
+        plt.title('Total Error Magnitude (3D)')
+        plt.xlabel('Sample Index')
+        plt.grid(True)
+        plt.legend()
 
-    # Plot 3: Z-Axis Error
-    axes[1, 0].plot(l2_errors_xyz[:, 2], label='L2', color='r')
-    axes[1, 0].plot(fgo_errors_xyz[:, 2], label='FGO', color='b', linestyle='--')
-    axes[1, 0].plot(araim_errors_xyz[:, 2], label='araim', color='g', linestyle='--')
-    axes[1, 0].set_title('Error in Z-Axis')
-    axes[1, 0].set_xlabel('Sample Index')
-    axes[1, 0].set_ylabel('Error (meters)')
-    axes[1, 0].grid(True)
+        # plot LLA results
+        plt.figure()
+        fig1, ax1 = plt.subplots()
+        fig2, ax2 = plt.subplots()
 
-    # Plot 4: Total Error Magnitude
-    axes[1, 1].plot(l2_total_error, label='L2', color='r')
-    axes[1, 1].plot(fgo_total_error, label='FGO', color='b', linestyle='--')
-    axes[1, 1].plot(araim_total_error, label='araim', color='g', linestyle='--')
-    axes[1, 1].set_title('Total Error Magnitude (3D)')
-    axes[1, 1].set_xlabel('Sample Index')
-    axes[1, 1].grid(True)
-    fig.legend()
+        for key in results:
+            curr_locs = r3f.ecef_to_geodetic(results[key][0])
+            ax1.plot(curr_locs[:, 1], curr_locs[:, 0], label=key)
+            ax2.plot(curr_locs[:, 2], label=key)
 
-    plt.tight_layout(rect=(0, 0, 1, 0.96))
-    
-    plt.figure()
-    plt.plot(l2_time_offsets, 'r.-', label='L2 Time Offsets')
-    plt.plot(fgo_time_offsets, 'b--', label='FGO Time Offsets')
-    # plt.plot(araim_time_offsets, 'g--', label='ARAIM Time Offsets')
-    plt.title('Time Offsets')
-    plt.ylabel('Time (seconds*c = meters)')
-    plt.legend()
+        ax1.set_xlabel('Longitude (rad)')
+        ax1.set_ylabel('Latitude (rad)')
+        ax2.set_xlabel('Sample Index')
+        ax2.set_ylabel('Height (meters)')
 
-    plt.figure(figsize=(8, 6))
+        fig1.suptitle(f'Latitude/Longitude: Truth vs estimated (Run {run_id}, {dataset_name})')
+        fig2.suptitle(f'Height: Truth vs estimated (Run {run_id}, {dataset_name})')
 
-    try:
-        # Convert locaitons to lat/lon
-        l2_est_lla = np.array([r3f.ecef_to_geodetic(pt) for pt in l2_estimated_locations])
-        fgo_est_lla = np.array([r3f.ecef_to_geodetic(pt) for pt in fgo_estimated_locations])
-        araim_est_lla = np.array([r3f.ecef_to_geodetic(pt) for pt in araim_est_locs])    
-        truth_lla = np.array([r3f.ecef_to_geodetic(pt) for pt in truth_array])
-    except Exception as e:
-        raise RuntimeError("r3f conversion failed") from e
+        ax1.legend()
+        ax2.legend()
 
-    # Plot Lat/Lon: longitude on x-axis, latitude on y-axis
+        ax1.grid(True)
+        ax2.grid(True)
 
-    plt.plot(truth_lla[:, 1], truth_lla[:, 0], 'k.-', label='Truth')
-    plt.plot(l2_est_lla[:, 1], l2_est_lla[:, 0], 'r.-', label='L2')
-    plt.plot(fgo_est_lla[:, 1], fgo_est_lla[:, 0], 'b.-', label='FGO')
-    plt.plot(araim_est_lla[:, 1], araim_est_lla[:, 0], 'g.-', label='araim')
-    plt.xlabel('Longitude (rad)')
-    plt.ylabel('Latitude (rad)')
-    plt.title(f'Latitude/Longitude: Truth vs Estimated (Run {run_id}, {dataset_name})')
-    plt.legend()
-    plt.grid(True)
-    plt.axis('equal')
-
-    plt.figure()
-    plt.plot(truth_lla[:, 2], 'k.-', label='Truth')
-    plt.plot(l2_est_lla[:, 2], 'r.-', label='L2')
-    plt.plot(fgo_est_lla[:, 2], 'b.-', label='FGO')
-    plt.plot(araim_est_lla[:, 2], 'g.-', label='araim')
-    plt.xlabel('Sample Index')
-    plt.ylabel('Height (meters)')
-    plt.title(f'Height: Truth vs Estimated (Run {run_id}, {dataset_name})')
-    plt.show()
-
-# --- As a test, run a dataset and compare the RCF results with the basic L2 optimization ---
+        ax1.axis('equal')
+        plt.show()
 
 if __name__ == '__main__':
     import meas_db_utils as mdu
@@ -229,7 +169,7 @@ if __name__ == '__main__':
 
         # The parameters requested by the user:
         MC_RUN_ID = 1      # Assuming 1 is your real data or target run
-        DATASET = 'Berlin_Potsdamer'  # Example dataset name
+        DATASET = 'Chemnitz'  # Example dataset name
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
@@ -246,7 +186,11 @@ if __name__ == '__main__':
 
         }
 
-        validate_estimation(conn, MC_RUN_ID, DATASET, test_params)
+        validate_estimation(conn, MC_RUN_ID, DATASET, test_params, \
+                                ["ARAIM","Huber","Cauchy","trunc_Gauss","GemanMcClure"],\
+                                results_file = DATASET+"_results.pkl",\
+                                errors_file = DATASET+"_errors.pkl", \
+                                plot_res = False)
 
     except sqlite3.Error as e:
         print(f"A fatal database error occurred: {e}")

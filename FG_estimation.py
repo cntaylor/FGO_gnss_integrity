@@ -207,7 +207,7 @@ def snapshot_fgo(measurements, params = default_params):
     rot_mat = np.zeros((4,4))
     rot_mat[:3,:3] = C_n_ecef
     rot_mat[3,3] = 1
-    return est_location, time_offset, weights, rot_mat@np.linalg.inv(Jp.T@Jp)@rot_mat.T
+    return est_location, time_offset, weights, rot_mat@np.linalg.inv(Jp.T@Jp)@rot_mat.T, num_iters
 
 # def run_fgo_estimation(db_name, run_id):
 #     """

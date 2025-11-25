@@ -25,9 +25,7 @@ def find(a, func):
 	source: http://stackoverflow.com/questions/5957470/matlab-style-find-function-in-python
 
 	"""
-
-	return [i for (i, val) in enumerate(a) if func(val)]
-
+	return [i for i, val in enumerate(a) if func(val)]
 
 class KFIntegrityMonitor():
 	
@@ -1475,8 +1473,6 @@ class MultiHypothesisSolutionSeperation():
 			for i in range( len(svID) ):
 				ind = find( self._satList, lambda x: x == svID[i] )[0]
 				b[q] = b[q] + abs(Sk[q,i])*self._maxBiasNom[ind]
-
-		
 
 		enuCov=enuCov[0:3]
 		deltaX=np.zeros(4)

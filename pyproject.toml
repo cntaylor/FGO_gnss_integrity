@@ -10,4 +10,5 @@ dependencies = [
     "numpy>=2.3.3",
     "r3f>=2.1.10",
     "scipy>=1.16.3",
+    "snakeviz>=2.2.2",
 ]
