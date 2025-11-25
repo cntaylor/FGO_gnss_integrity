@@ -1469,9 +1469,9 @@ class MultiHypothesisSolutionSeperation():
 		
 		# determine worst-case impact from biases Eq. 16 from Blanch
 		b = np.zeros(3)
-		for q in range(3):
-			for i in range( len(svID) ):
-				ind = find( self._satList, lambda x: x == svID[i] )[0]
+		for i in range( len(svID) ):
+			ind = find( self._satList, lambda x: x == svID[i] )[0]
+			for q in range(3):
 				b[q] = b[q] + abs(Sk[q,i])*self._maxBiasNom[ind]
 
 		enuCov=enuCov[0:3]
@@ -1515,17 +1515,17 @@ class MultiHypothesisSolutionSeperation():
 
 				minChi = chiupdate
 				ExcIndex = delInd
-				print(chiupdate)
+				# print(chiupdate)
 				#print(chiall)
 				#print(chisubtract)
-				print(ExcIndex)
-				print ("Chi-Squared Stat for Sat %d is %5.4f"%(ExcIndex,chiupdate))
+				# print(ExcIndex)
+				# print ("Chi-Squared Stat for Sat %d is %5.4f"%(ExcIndex,chiupdate))
 			else:
 				minChi = minChi
 				ExcIndex = ExcIndex
-				print(chiupdate)
-				print(delInd)
-				print ("Chi-Squared Stat for Sat %d is %5.4f"%(delInd,chiupdate))
+				# print(chiupdate)
+				# print(delInd)
+				# print ("Chi-Squared Stat for Sat %d is %5.4f"%(delInd,chiupdate))
 
 			
 
