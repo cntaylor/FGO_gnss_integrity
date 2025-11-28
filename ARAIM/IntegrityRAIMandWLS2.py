@@ -1470,7 +1470,8 @@ class MultiHypothesisSolutionSeperation():
 		# determine worst-case impact from biases Eq. 16 from Blanch
 		b = np.zeros(3)
 		for i in range( len(svID) ):
-			ind = find( self._satList, lambda x: x == svID[i] )[0]
+			ind = np.where(self._satList == svID[i])[0][0]
+			# ind = find( self._satList, lambda x: x == svID[i] )[0]
 			for q in range(3):
 				b[q] = b[q] + abs(Sk[q,i])*self._maxBiasNom[ind]
 
@@ -1549,14 +1550,14 @@ class MultiHypothesisSolutionSeperation():
 			
 	def SatExc(self, ExcIndex, G, W, OMC, svID, count, satsXYZ):
 
-		print(ExcIndex)
+		# print(ExcIndex)
 		#print(svID(ExcIndex))
 		
-		print(G.shape)
-		print(W.shape)
-		print(OMC.shape)
-		print(len(svID))
-		print(satsXYZ.shape)
+		# print(G.shape)
+		# print(W.shape)
+		# print(OMC.shape)
+		# print(len(svID))
+		# print(satsXYZ.shape)
 
 		Gx = np.delete(G, ExcIndex, 0)
 		OMCx = np.delete(OMC, ExcIndex, 0)
@@ -1565,11 +1566,11 @@ class MultiHypothesisSolutionSeperation():
 		svIDx = np.delete(svID, ExcIndex, 0)
 		satsXYZx = np.delete(satsXYZ, ExcIndex, 0)
 
-		print(Gx.shape)
-		print(Wx.shape)
-		print(OMCx.shape)
-		print(len(svIDx))
-		print(satsXYZx.shape)
+		# print(Gx.shape)
+		# print(Wx.shape)
+		# print(OMCx.shape)
+		# print(len(svIDx))
+		# print(satsXYZx.shape)
 		
 		count = count + 1
 
