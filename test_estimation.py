@@ -20,7 +20,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
 
     # 1. Get MC_Sample_IDs
     # Assumes MC_run_ID=1 is the 'real data' run as specified.
-    sample_ids = mdu.get_mc_sample_ids(conn, run_id, dataset_name=dataset_name)[:15]  # Change here for smaller sets for testing
+    sample_ids = mdu.get_mc_sample_ids(conn, run_id, dataset_name=dataset_name)  # Change here for smaller sets for testing
     
     if not sample_ids:
         print("No MC samples found for the specified run and dataset.")
@@ -168,8 +168,9 @@ if __name__ == '__main__':
         cursor = conn.cursor()
 
         # The parameters requested by the user:
-        MC_RUN_ID = 1      # Assuming 1 is your real data or target run
-        DATASET = 'Chemnitz'  # Example dataset name
+        MC_RUN_ID = 2      # Assuming 1 is your real data or target run
+        DATASET = None  # Example dataset name
+        filename_base = 'NoOutliers'
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
@@ -188,9 +189,9 @@ if __name__ == '__main__':
 
         validate_estimation(conn, MC_RUN_ID, DATASET, test_params, \
                                 ["ARAIM","Huber","Cauchy","trunc_Gauss","GemanMcClure"],\
-                                results_file = DATASET+"_results.pkl",\
-                                errors_file = DATASET+"_errors.pkl", \
-                                plot_res = False)
+                                results_file = filename_base+"_results.pkl",\
+                                errors_file = filename_base+"_errors.pkl", \
+                                plot_res = True)
 
     except sqlite3.Error as e:
         print(f"A fatal database error occurred: {e}")
