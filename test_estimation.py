@@ -8,7 +8,6 @@ from ARAIM_estimation import snapshot_ARAIM, init_ARAIM
 import matplotlib.pyplot as plt
 import pickle
 
-#TODO:  change from dataset_name to mc_run?  Probably get rid fo plotting in that case
 def validate_estimation(conn, run_id, dataset_name, test_params, methods,
                         results_file = "results.pkl",
                         errors_file = "errors.pkl",
@@ -77,13 +76,19 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
         results["L2"][1][i] = l2_est_loc[1] # timing offset
         for method in methods:
             if method == "ARAIM":
+                print("Running method:", method)
                 results[method][0][i], _, \
                     results[method][2][i], results[method][3][i] = \
                     snapshot_ARAIM(measurements_array)
             else:
                 print("Running method:", method)
                 tmp_params = test_params.copy()
-                tmp_params["rcf"] = method
+                if "gnc" in method:
+                    tmp_params["gnc"] = True
+                    tmp_params["rcf"] = method.lstrip("gnc_")
+                else:
+                    tmp_params["gnc"] = False
+                    tmp_params["rcf"] = method
                 results[method][0][i], results[method][1][i], \
                     results[method][2][i], results[method][3][i], \
                     results[method][4][i] = \
@@ -168,12 +173,20 @@ if __name__ == '__main__':
         cursor = conn.cursor()
 
         # The parameters requested by the user:
-        MC_RUN_ID = 2      # Assuming 1 is your real data or target run
+        # run_id: 
+        # - 1 = real data
+        # - 2 = no outliers, no noise (for debugging)
+        # - 3 = no outliers
+        # - 4 = one outlier
+        # - 5 = two outliers
+        # - 6 = three outliers
+        # - 7 = four outliers
+        MC_RUN_ID = 3    # Assuming 1 is your real data or target run
         DATASET = None  # Example dataset name
         filename_base = 'NoOutliers'
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
-            "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
+            "base_sigma" : 5.0,  # Base measurement noise standard deviation (meters)
             "gnc" : False,    # Graduated non-convexity
             "max_iters" : 50, # How many Gauss-Newton steps to allow
             "tolerance" : 1e-4,
@@ -181,17 +194,17 @@ if __name__ == '__main__':
             # more araim parameters
             "araim_set_covariance" : True,
             "araim_set_fault_prob" : True,
-            "fault_prob" : 0.01,
+            "fault_prob" : 0.001,
             "araim_use_bias_for_PL" : False,
             "max_bias" : 0.0
 
         }
 
         validate_estimation(conn, MC_RUN_ID, DATASET, test_params, \
-                                ["ARAIM","Huber","Cauchy","trunc_Gauss","GemanMcClure"],\
+                                ["ARAIM","Huber","Cauchy","GemanMcClure","gnc_trunc_Gauss","gnc_GemanMcClure"],\
                                 results_file = filename_base+"_results.pkl",\
                                 errors_file = filename_base+"_errors.pkl", \
-                                plot_res = True)
+                                plot_res = False)
 
     except sqlite3.Error as e:
         print(f"A fatal database error occurred: {e}")
