@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import comp_utils as cu
 import r3f
+from math import sqrt
 
 # This software must use FGO to evaluate performance of the following parameters (from the submitted abstract):
 #  1.  Different robust cost functions (e.g., Huber, Cauchy, etc., including a truncated Gaussian)
@@ -58,8 +59,32 @@ def gnc_geman_mcclure_weights(residuals, c, theta):
     theta : GNC parameter (positive scalar)
     returns: weights array
     """
+    # There is a discrepency between the Li-Ta paper and the original GNC paper.  Original GNC has (equation 12) this weight
+    # squared overall.  I think what I actually need it the square root of the weight (since I apply it to both y and J), so I 
+    # keep the square root term, but think this is a typo in the Li-Ta paper
     denom = 1.0 + (residuals / c) ** 2 / theta
     return 1.0 / (denom ** 2)
+
+def gnc_trunc_gauss_weights(residuals, cutoff, theta):
+    """
+    GNC truncated Gaussian weights.
+    Args:
+        residuals : numpy array of residuals
+        cutoff : absolute threshold (same units) after which weight = 0 (if it was non-gnc'ed)
+        theta : GNC parameter (positive scalar)
+    
+    returns: weights array
+    """
+    res_sq = np.square(residuals)
+    limit1 = theta/(theta+1) * cutoff**2
+    limit2 = (theta+1)/theta * cutoff**2
+    going_out = np.zeros_like(residuals, dtype=float)
+    going_out[res_sq < limit1] = 1.0
+    going_out[res_sq >= limit2] = 0.0
+    idx = np.logical_and(res_sq >= limit1, res_sq < limit2)
+    going_out[idx] = \
+        cutoff/np.abs(residuals[idx]) * sqrt(theta * (theta+1)) - theta
+    return np.sqrt(going_out) # For use in both J and y
 
 def trunc_gauss_weights(residuals, cutoff):
     """
@@ -107,7 +132,7 @@ def get_rcf_weights(residuals, params):
     else:
         raise ValueError(f"Unknown RCF '{rcf}'. Supported: Huber, Cauchy, GemanMcClure, trunc_Gauss")
     
-def get_gnc_rcf_weights(residuals, params):
+def get_gnc_rcf_weights(residuals, params, theta):
     """
     Dispatch to the appropriate RCF weight function based on params["rcf"].
     residuals : numpy array of residuals
@@ -123,12 +148,12 @@ def get_gnc_rcf_weights(residuals, params):
     # sensible defaults (multipliers chosen from common practice)
     if rcf in ("GemanMcClure", "Geman-McClure", "Geman_McClure"):
         c = params.get("geman_c", 2.0) * base_sigma
-        return geman_mcclure_weights(residuals, c)
+        return gnc_geman_mcclure_weights(residuals, c, theta)
     elif rcf in ("trunc_Gauss", "TruncGauss", "TruncatedGaussian"):
         # trunc_k is a multiplier applied to base_sigma to produce the cutoff threshold
         trunc_k = float(params.get("trunc_k", 3.0))  # default cutoff at 3*sigma
         cutoff = trunc_k * base_sigma
-        return trunc_gauss_weights(residuals, cutoff)
+        return gnc_trunc_gauss_weights(residuals, cutoff, theta)
     else:
         raise ValueError(f"Unknown RCF '{rcf}'. Supported: Huber, Cauchy, GemanMcClure, trunc_Gauss")
     
@@ -145,40 +170,92 @@ def snapshot_fgo(measurements, params = default_params):
     """
 
     est_location, time_offset = cu.estimate_l2_location(measurements)
-    if params["gnc"]: # Not currently working!
-        print("GNC not implemented yet...")
-        pass
-        # # Use the Li-Ta approach of setting the original "weight" high enough that all residuals are in the 
-        # # convex region of the robust cost function, then gradually reduce it.
-        # # Find the maximum residual from the initial estimate
-        # if params["rcf"] not in ("GemanMcClure", "Geman-McClure", "Geman_McClure"):
-        #     raise ValueError("GNC is only implemented for Geman-McClure RCF in this example.")
-        # y = np.zeros(len(measurements))
-        # for i,meas in enumerate(measurements):
-        #     est_pseudorange = mdu.noiseless_pseudorange(est_location, meas[1:4])
-        #     y[i] = meas[0] - (est_pseudorange + time_offset)
-        # max_residual = np.max(np.abs(y))/params['base_sigma']
-        # # Equation 23 from Li-Ta paper
-        # theta = 3 * max_residual**2 / params.get("geman_c", 2.0)**2
-        # # To perform GNC, will have two loops.  Outer loop reduces theta, inner loop does IRLS
-        # while theta > 1.:
-        #     # Inner loop: Perform IRLS
-        #     weights = get_rcf_weights(y, params)
-        #     # Update residuals
-        #     for i,meas in enumerate(measurements):
-        #         est_pseudorange = mdu.noiseless_pseudorange(est_location, meas[1:4])
-        #         y[i] = meas[0] - (est_pseudorange + time_offset)
-        #     max_residual = np.max(np.abs(y))/params['base_sigma']
-        #     theta = 3 * max_residual**2 / params.get("geman_c", 2.0)**2
+    total_num_iters = 0
+    if params["gnc"]:
+        # Use the Li-Ta approach of setting the original "weight" high enough that all residuals are in the 
+        # convex region of the robust cost function, then gradually reduce it.
+        # Find the maximum residual from the initial estimate
+        y= cu.compute_residual_and_jacobian(measurements[:,0], est_location, measurements[:,1:], time_offset, False)
+        max_residual = np.max(np.abs(y))/params['base_sigma']
+        if params["rcf"] in ("GemanMcClure", "Geman-McClure", "Geman_McClure"):
+            # Equation 23 from Li-Ta paper
+            theta = max(3 * max_residual**2 / params.get("geman_c", 2.0)**2, 1.4) # Make sure the loop runs at least once
+            # To perform GNC, will have two loops.  Outer loop reduces theta, inner loop does IRLS
+            while theta > 1.:
+                # Inner loop: Perform IRLS
+                delta_mag=1000.
+                num_iters = 0
+                while delta_mag > .1 and num_iters < 5: 
+                    y,J = cu.compute_residual_and_jacobian(measurements[:,0], est_location, measurements[:,1:], time_offset, True)
+                    weights = get_gnc_rcf_weights(y, params, theta)
+                    yp = weights * y
+                    Jp = weights[:, np.newaxis] * J # Element-wise multiply each row by weight
+                    lstsq_worked=True
+                    try:
+                        results = np.linalg.lstsq(Jp,yp)
+                    except:
+                        lstsq_worked=False
+
+                    if lstsq_worked and results[2] == 4:
+                        delta = results[0]
+                        est_location += delta[:3]
+                        time_offset += delta[3]
+                        delta_mag = np.linalg.norm(delta)
+                    else:
+                        print("Problem with robust FGO ... No longer of sufficient rank!  Quitting prematurely")
+                        print('Weights are: ', weights, 'num_iters is', num_iters)
+                        delta_mag = 0.
+                    num_iters += 1
+                total_num_iters += num_iters
+                theta = theta / 1.414
+        elif params["rcf"] in ("trunc_Gauss", "TruncGauss", "TruncatedGaussian"):
+            yp_delta = 10000. #Change in weighted residual
+            # Following equation 14 and remark 5 in "Graduated Non-Convexity for Robust Spatial Perception:
+            # From Non-Minimal Solvers to Global Outlier Rejection"
+            cbar = params.get("trunc_k", 3.0)
+            theta = cbar**2 / (max_residual**2 + cbar**2) # Make sure loop will run at least 
+            old_weight_res = np.sum(np.square(y))
+            while yp_delta > .1:
+                # Inner loop: Perform IRLS
+                delta_mag=1000.
+                num_iters = 0
+                while delta_mag > .1 and num_iters < 5: 
+                    y,J = cu.compute_residual_and_jacobian(measurements[:,0], est_location, measurements[:,1:], time_offset, True)
+                    weights = get_gnc_rcf_weights(y, params, theta)
+                    yp = weights * y
+                    Jp = weights[:, np.newaxis] * J # Element-wise multiply each row by weight
+                    theta = theta * 1.414
+                    lstsq_worked=True
+                    try:
+                        results = np.linalg.lstsq(Jp,yp)
+                    except:
+                        lstsq_worked=False
+
+                    if lstsq_worked and results[2] == 4:
+                        delta = results[0]
+                        est_location += delta[:3]
+                        time_offset += delta[3]
+                        delta_mag = np.linalg.norm(delta)
+                    else:
+                        print("Problem with robust FGO ... No longer of sufficient rank!  Quitting prematurely")
+                        print('Weights are: ', weights)
+                        delta_mag = 0.
+                    num_iters += 1
+                total_num_iters += num_iters
+                theta = theta * 1.414
+                new_weight_res = np.sum(np.square(yp))
+                yp_delta = np.abs(old_weight_res - new_weight_res)
+                old_weight_res = new_weight_res
+        else: 
+            raise NotImplementedError
     else: # not GNC!
         delta_mag = 1000.
-        curr_time_offset = time_offset
         num_iters=0
         while delta_mag > params.get('tolerance',.01) and num_iters < params.get('max_iters',50):
             y,J = cu.compute_residual_and_jacobian(measured_pseudoranges=measurements[:,0],
                                                    estimated_location=est_location,
                                                    satellite_locations=measurements[:,1:],
-                                                   time_offset=curr_time_offset,
+                                                   time_offset=time_offset,
                                                    compute_Jacobian=True)
             weights = get_rcf_weights(residuals = y,
                                       params = params)
@@ -193,12 +270,14 @@ def snapshot_fgo(measurements, params = default_params):
             if lstsq_worked and results[2] == 4:
                 delta = results[0]
                 est_location += delta[:3]
-                curr_time_offset += delta[3]
+                time_offset += delta[3]
                 delta_mag = np.linalg.norm(delta)
             else:
                 print("Problem with robust FGO ... No longer of sufficient rank!  Quitting prematurely")
+                print('Weights are: ', weights)
                 delta_mag = 0.
             num_iters += 1
+        total_num_iters = num_iters
     #Compute the covariance
     # First, need lat/lon
     lat_lon = r3f.ecef_to_geodetic(est_location)
@@ -207,7 +286,7 @@ def snapshot_fgo(measurements, params = default_params):
     rot_mat = np.zeros((4,4))
     rot_mat[:3,:3] = C_n_ecef
     rot_mat[3,3] = 1
-    return est_location, time_offset, weights, rot_mat@np.linalg.inv(Jp.T@Jp)@rot_mat.T, num_iters
+    return est_location, time_offset, weights, rot_mat@np.linalg.inv(Jp.T@Jp)@rot_mat.T, total_num_iters
 
 # def run_fgo_estimation(db_name, run_id):
 #     """
