@@ -217,6 +217,57 @@ def get_mc_samples_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequenc
     finally:
         cursor.close()
 
+def get_mc_samples_outliers(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
+    '''
+    Retrieves the complete outlier information for a list of MC_Sample_IDs.
+
+    Args:
+        conn (sqlite3.Connection): An active database connection object.
+        mc_sample_ids (list/tuple): A list or tuple of MC_Sample_IDs.
+
+    Returns:
+        list: A list of numpy arrays, where each array corresponds to a specific sample
+              MC_Sample_ID. Each array is N of dtype bool (N = # pseudoranges)
+              Returns an empty list if no IDs are provided or on database error.
+    '''
+    if not mc_sample_ids:
+        raise ValueError('mc_sample_ids must be non-empty')
+
+    cursor = conn.cursor()
+    try:
+        unique_ids = list(set(mc_sample_ids))
+        placeholders = ', '.join(['?'] * len(unique_ids))
+        grouped_data = {sid: [] for sid in unique_ids}
+
+        cursor.execute(f"""
+            SELECT 
+                MS.MC_Sample_ID,
+                MS.Is_Outlier
+            FROM Measurements MS
+            WHERE MS.MC_Sample_ID IN ({placeholders})
+            ORDER BY MS.MC_Sample_ID ASC, MS.Satellite_num ASC;
+        """, unique_ids)
+
+        for row in cursor.fetchall():
+            sample_id = row[0]
+            outlier_info = row[1]
+            if sample_id in grouped_data:
+                grouped_data[sample_id].append(outlier_info)
+
+        final_output = []
+        for input_id in mc_sample_ids:
+            data_list = grouped_data.get(input_id)
+            if data_list is None or len(data_list) == 0:
+                final_output.append([])
+            else:
+                final_output.append(np.array(data_list,dtype=bool))
+        return final_output
+    except sqlite3.Error as e:
+        log.error('An error occurred during outlier information retrieval: %s', e)
+        raise
+    finally:
+        cursor.close()
+
 def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
     '''
     Retrieves the truth location (X, Y, Z) for each associated snapshot ID 
@@ -382,12 +433,12 @@ def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Seque
             # Assuming satellite numbers start at 0 and increment sequentially up to expected_count
             if outlier_array_valid:
                 measurement_data = [
-                    (new_mc_sample_id, sat_num, prange, is_outlier)
+                    (new_mc_sample_id, sat_num, float(prange), bool(is_outlier))
                     for sat_num, (prange, is_outlier) in enumerate(zip(pseudorange_array, is_outlier_array))
                 ]
             else:
                 measurement_data = [
-                    (new_mc_sample_id, sat_num, prange, None)
+                    (new_mc_sample_id, sat_num, float(prange), None)
                     for sat_num, prange in enumerate(pseudorange_array)
                 ]
 
