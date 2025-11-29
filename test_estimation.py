@@ -55,6 +55,8 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
     results["L2"] = []
     results["L2"].append(np.zeros((len(measurements_list),3))) # position estimates
     results["L2"].append(np.zeros(len(measurements_list))) # time offsets
+    results["L2"].append([None] * len(measurements_list)) # outlier info
+    results["L2"].append([None] * len(measurements_list)) # covariance
     for method in methods:
         if method == "ARAIM":
             # ARAIM doesn't return the timing, so it's a special case
@@ -74,21 +76,30 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
         l2_est_loc = cu.estimate_l2_location(measurements_array)
         results["L2"][0][i] = l2_est_loc[0] # position
         results["L2"][1][i] = l2_est_loc[1] # timing offset
+        y,J = cu.compute_residual_and_jacobian(measurements_array[:,0], l2_est_loc[0], measurements_array[:,1:], l2_est_loc[1], compute_Jacobian=True)
+        results["L2"][3][i] = np.linalg.inv(J.T @ J) * test_params['base_sigma']**2
         for method in methods:
             if method == "ARAIM":
-                print("Running method:", method)
+                print("Running method:", method, "for sample", i)
                 results[method][0][i], _, \
                     results[method][2][i], results[method][3][i] = \
                     snapshot_ARAIM(measurements_array)
             else:
                 print("Running method:", method)
                 tmp_params = test_params.copy()
+                rcf_method = method
                 if "gnc" in method:
                     tmp_params["gnc"] = True
-                    tmp_params["rcf"] = method.lstrip("gnc_")
+                    rcf_method = rcf_method.removeprefix("gnc_")
                 else:
                     tmp_params["gnc"] = False
-                    tmp_params["rcf"] = method
+                if "double" in method: # Double the cut-off values, see the effects.
+                    tmp_params["huber_k"] *= 2.0
+                    tmp_params["cauchy_c"] *= 2.0
+                    tmp_params["geman_c"] *= 2.0
+                    tmp_params["trunc_k"] *= 2.0
+                    rcf_method = rcf_method.removesuffix("_double")
+                tmp_params["rcf"] = rcf_method
                 results[method][0][i], results[method][1][i], \
                     results[method][2][i], results[method][3][i], \
                     results[method][4][i] = \
@@ -115,7 +126,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
     print("\n--- STATISTICAL RESULTS ---")
     print(f"Total Error (Magnitude) Statistics:")
     for key in result_errors:
-        print(f"  {key:>12} :   Average: {np.mean(total_errors[key]):7.3f} meters,",\
+        print(f"  {key:>17} :   Average: {np.mean(total_errors[key]):7.3f} meters,",\
               f" Std Dev: {np.std(total_errors[key]):7.3f} meters,",
               f" Max: {np.max(total_errors[key]):7.3f} meters")
 
@@ -170,7 +181,6 @@ if __name__ == '__main__':
     DB_FILE = "meas_data.db"
     try:
         conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
 
         # The parameters requested by the user:
         # run_id: 
@@ -181,16 +191,19 @@ if __name__ == '__main__':
         # - 5 = two outliers
         # - 6 = three outliers
         # - 7 = four outliers
-        MC_RUN_ID = 3    # Assuming 1 is your real data or target run
-        DATASET = None  # Example dataset name
-        filename_base = 'NoOutliers'
+        MC_RUN_ID = 1   # Assuming 1 is your real data or target run
+        DATASET = 'UrbanNav_Harsh'  # Example dataset name
+        filename_base = DATASET #'OneOutlier'
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 5.0,  # Base measurement noise standard deviation (meters)
             "gnc" : False,    # Graduated non-convexity
             "max_iters" : 50, # How many Gauss-Newton steps to allow
             "tolerance" : 1e-4,
-            "geman_c": 2.0,    # Tuning constant for Geman-McClure
+            "geman_c": 3.0,    # Tuning constant for Geman-McClure
+            "huber_k": 1.345,  # Tuning constant for Huber
+            "cauchy_c": 2.385, # Tuning constant for Cauchy
+            "trunc_k": 3.0,
             # more araim parameters
             "araim_set_covariance" : True,
             "araim_set_fault_prob" : True,
@@ -205,7 +218,7 @@ if __name__ == '__main__':
                                 results_file = filename_base+"_results.pkl",\
                                 errors_file = filename_base+"_errors.pkl", \
                                 plot_res = False)
-
+#
     except sqlite3.Error as e:
         print(f"A fatal database error occurred: {e}")
     finally:

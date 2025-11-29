@@ -2,6 +2,7 @@ import numpy as np
 import pickle as pkl
 import sqlite3
 import meas_db_utils as mdu
+import r3f
 
 ''' This file is a complement to test_estimation.py.
     It pulls in the results_file and errors_file and
@@ -47,12 +48,12 @@ def analyze_outliers(results, thresholds, true_outliers=None):
 
     for key in results.keys():
         if key != 'ARAIM' and key != 'L2' and key != 'truth': 
-            print(key)
+            # print(key)
             fgo_outliers = results[key][2] # Third element in the list
             assert len(fgo_outliers) == len(araim_outliers), "ARAIM and FGO methods need to have the same number of results"
             # Take the output and convert into sets of outliers, using a threshold
             threshold = thresholds.get(key,.1)
-            print("Using threshold of", threshold)
+            # print("Using threshold of", threshold)
             fgo_sets = [set(np.where(fgo_outliers[i]<threshold)[0].tolist()) for i in range(len(fgo_outliers))]
             # # Used to look more closely at individual cases.
             # print(f'{key} outliers: {fgo_sets[4:8]}')
@@ -94,60 +95,145 @@ def analyze_outliers(results, thresholds, true_outliers=None):
                 else:
                     going_out[new_key][3].append(i)
     return going_out
-       
+
 if __name__ == '__main__':
     ''' Comment pasted from test_estimation...
     '''
     # The parameters requested by the user:
     # run_id: 
     # - 1 = real data
-    # - 2 = no outliers
-    # - 5 = one outlier
-    # - 6 = two outliers
-    # - 7 = three outliers
-    # - 8 = four outliers
-    # - 10 = no outliers, no noise (for debugging)
+    # - 2 = no outliers, no noise (for debugging)
+    # - 3 = no outliers
+    # - 4 = one outlier
+    # - 5 = two outliers
+    # - 6 = three outliers
+    # - 7 = four outliers
     run_id = 5
-    base_name = 'OneOutlier'
+    base_name = 'TwoOutliers'
     results_file = base_name + '_results.pkl'
     errors_file = base_name + '_errors.pkl'
+    results, errors = get_errors(results_file, errors_file)
     # Get the true outliers from the database for comparison
     conn = sqlite3.connect('meas_data.db')
     snapshots = mdu.get_mc_sample_ids(conn, run_id)
+    true_positions = mdu.get_mc_sample_truths(conn, snapshots)
     true_outliers = mdu.get_mc_samples_outliers(conn, snapshots)
     # Turn true_outliers into sets of indices
     true_outlier_sets = [set(np.where(true_outliers[i])[0].tolist()) for i in range(len(true_outliers))]
-    results, errors = get_errors(results_file, errors_file)
-
-    print('Keys for results are\n', results.keys())
+    
+    ##### All the data is now read in. Now to process and put out information.
+        
+    # Find 3D errors
+    errors_3d_enu = {}
+    for key in results.keys():
+        if key == 'truth':
+            continue
+        errors_3d_enu[key] = np.zeros_like(results[key][0])
+        for i in range(len(results[key][0])):
+            errors_3d_enu[key][i] = r3f.ecef_to_tangent(results[key][0][i],true_positions[i], ned=False)
+    # And compute the chi-squared value for each error
+    chi_sq = {}
+    for key in errors_3d_enu.keys():
+        if key == "ARAIM" or key == "L2": # L2 should work when data is rerun... test_estimation has been modified to return a covariance for L2
+            continue
+        chi_sq[key] = np.zeros(len(errors_3d_enu[key]))
+        for i in range(len(errors_3d_enu[key])):
+            chi_sq[key][i] = errors_3d_enu[key][i] @ np.linalg.inv(results[key][3][i][:3,:3]) @ errors_3d_enu[key][i]
+    
+    print("ANEES is...")
+    for key in chi_sq.keys():
+        print(f'{key:<18}: {np.mean(chi_sq[key])}')
+    print('\n')
+    # To start, let's print out computational information
+    print ("Average number of lstsq solves...")
+    for key in results.keys():
+        if key == "L2" or key == 'truth':
+            continue
+        if key == "ARAIM":
+            num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
+            avg_solves = np.mean(num_sats)*2
+            print(f'{key:<18}: {avg_solves} (best estimate)')
+        else:
+            avg_solves = np.mean(results[key][4])
+            print(f'{key:<18}: {avg_solves}')
+    print('\n')
     thresholds = {'GemanMcClure':.2, 'Huber':.4, 'Cauchy':.3}
-    going_out = analyze_outliers(results, thresholds, true_outlier_sets)
-    for key in going_out.keys():
-        print(key)
-        print(f'same {len(going_out[key][0])}, subset {len(going_out[key][1])}, superset {len(going_out[key][2])}, neither {len(going_out[key][3])}')
+    set_comparisons = analyze_outliers(results, thresholds, true_outlier_sets)
+    
+    # Now find out the errors for each set:
+    error_per_set = {}
+    for key in set_comparisons.keys():
+        error_per_set[key] = []
+        # How to access the errors dict
+        errors_key = key if "_truth" not in key else key[:-6]
+        for i in range(4):
+            if len(set_comparisons[key][i]) > 0:
+                error_per_set[key].append(np.mean(errors[errors_key][set_comparisons[key][i]]))
+            else:
+                error_per_set[key].append(np.nan)
+    # Now print out the results
+    print("Outlier groups and the average error in each group")
+    print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
+    print('-'*85)
+    sorted_keys = sorted(set_comparisons.keys(), key=lambda x: (x.endswith('_truth'), x))
+    for key in sorted_keys:
+        print('{:<25}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}'.format(key, \
+                                                                                  len(set_comparisons[key][0]), error_per_set[key][0], 
+                                                                                  len(set_comparisons[key][1]), error_per_set[key][1],
+                                                                                  len(set_comparisons[key][2]), error_per_set[key][2],
+                                                                                  len(set_comparisons[key][3]), error_per_set[key][3]))
+    print('\n')
 
-    # Let's look at some of the comparative sets between trunc_Gauss and ARAIM.  They should be the same, I think...
-    araim_outliers = results['ARAIM'][2]
-    fgo_outliers = results['gnc_trunc_Gauss'][2]
-    print("Let's show 4 that are the same")
-    max_cnt = 10
-    curr_cnt = 0
-    for same_idx in going_out['gnc_trunc_Gauss'][0]:
-        print ('------------------- index: ', same_idx,'-------------------')
-        print(f'gnc_trunc_Gauss: {np.where(fgo_outliers[same_idx] < .5)[0].tolist()}')
-        print(f'ARAIM: {araim_outliers[same_idx]}')
-        curr_cnt += 1
-        if curr_cnt == max_cnt:
-            break
-    print('*********************************')
-    print("Let's show 4 that are supersets of ARAIM")
-    curr_cnt=0
-    for super_idx in going_out['gnc_trunc_Gauss'][2]:   
-        print ('------------------- index:', super_idx,'-------------------')
-        print(f'gnc_trunc_Gauss: {np.where(fgo_outliers[super_idx] < .5)[0].tolist()}')
-        print(f'ARAIM: {araim_outliers[super_idx]}')
-        curr_cnt += 1
-        if curr_cnt == max_cnt:
-            break
-    # print(going_out)
+    # Now find out the errors for each set:
+    chisq_per_set = {}
+    for key in set_comparisons.keys():
+        if 'ARAIM' in key:
+            continue
+        chisq_per_set[key] = []
+        # How to access the errors dict
+        chisq_key = key if "_truth" not in key else key[:-6]
+        for i in range(4):
+            if len(set_comparisons[key][i]) > 0:
+                chisq_per_set[key].append(np.mean(chi_sq[chisq_key][set_comparisons[key][i]]))
+            else:
+                chisq_per_set[key].append(np.nan)
+    
+    print("Outlier groups and the average chi squared in each group")
+    print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
+    print('-'*85)
+    sorted_keys = sorted(set_comparisons.keys(), key=lambda x: (x.endswith('_truth'), x))
+    for key in sorted_keys:
+        if 'ARAIM' in key:
+            continue
+        print('{:<25}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}'.format(key, \
+                                                                                  len(set_comparisons[key][0]), chisq_per_set[key][0], 
+                                                                                  len(set_comparisons[key][1]), chisq_per_set[key][1],
+                                                                                  len(set_comparisons[key][2]), chisq_per_set[key][2],
+                                                                                  len(set_comparisons[key][3]), chisq_per_set[key][3]))
+
+
+    # # Let's look at some of the comparative sets between trunc_Gauss and ARAIM.  They should be the same, I think...
+    # araim_outliers = results['ARAIM'][2]
+    # fgo_outliers = results['gnc_trunc_Gauss'][2]
+    # max_cnt = 10
+    # print(f"Let's show {max_cnt} that are the same")
+    # curr_cnt = 0
+    # for same_idx in set_comparisons['gnc_trunc_Gauss'][0]:
+    #     print ('------------------- index: ', same_idx,'-------------------')
+    #     print(f'gnc_trunc_Gauss: {np.where(fgo_outliers[same_idx] < .5)[0].tolist()}')
+    #     print(f'ARAIM: {araim_outliers[same_idx]}')
+    #     curr_cnt += 1
+    #     if curr_cnt == max_cnt:
+    #         break
+    # # print('*********************************')
+    # print("Let's show 4 that are supersets of ARAIM")
+    # curr_cnt=0
+    # for super_idx in set_comparisons['gnc_trunc_Gauss'][2]:   
+    #     print ('------------------- index:', super_idx,'-------------------')
+    #     print(f'gnc_trunc_Gauss: {np.where(fgo_outliers[super_idx] < .5)[0].tolist()}')
+    #     print(f'ARAIM: {araim_outliers[super_idx]}')
+    #     curr_cnt += 1
+    #     if curr_cnt == max_cnt:
+    #         break
+    # # print(set_comparisons)
     
