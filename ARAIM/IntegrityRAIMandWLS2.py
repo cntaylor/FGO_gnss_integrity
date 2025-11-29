@@ -1456,9 +1456,8 @@ class MultiHypothesisSolutionSeperation():
 		#if (count > 0):
 				#Cacc = np.delete(Cacc, ExcIndex, 0)
 				#Cacc = np.delete(Cacc, ExcIndex, 1)
-
+		x,y=np.shape(Sk)
 		for q in range(3):
-			x,y=np.shape(Sk)
 			e = np.zeros(x)
 			e[q] = 1.0
 			e = np.matrix(e)
