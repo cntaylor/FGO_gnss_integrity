@@ -33,14 +33,14 @@ def huber_weights(residuals, k):
     w = np.ones_like(residuals, dtype=float)
     mask = abs_r > k
     w[mask] = k / abs_r[mask]
-    return w
+    return np.sqrt(w)
 
 def cauchy_weights(residuals, c):
     """
     Cauchy weights: w = 1 / (1 + (r/c)^2)
     c : tuning constant (positive scalar)
     """
-    return 1.0 / (1.0 + (residuals / c) ** 2)
+    return np.sqrt(1.0 / (1.0 + (residuals / c) ** 2))
 
 def geman_mcclure_weights(residuals, c):
     """
@@ -188,8 +188,8 @@ def snapshot_fgo(measurements, params = default_params):
                 while delta_mag > .1 and num_iters < 5: 
                     y,J = cu.compute_residual_and_jacobian(measurements[:,0], est_location, measurements[:,1:], time_offset, True)
                     weights = get_gnc_rcf_weights(y, params, theta)
-                    yp = weights * y
-                    Jp = weights[:, np.newaxis] * J # Element-wise multiply each row by weight
+                    yp = weights * y / params['base_sigma']
+                    Jp = weights[:, np.newaxis] * J / params['base_sigma'] # Element-wise multiply each row by weight
                     lstsq_worked=True
                     try:
                         results = np.linalg.lstsq(Jp,yp)
@@ -222,8 +222,8 @@ def snapshot_fgo(measurements, params = default_params):
                 while delta_mag > .1 and num_iters < 5: 
                     y,J = cu.compute_residual_and_jacobian(measurements[:,0], est_location, measurements[:,1:], time_offset, True)
                     weights = get_gnc_rcf_weights(y, params, theta)
-                    yp = weights * y
-                    Jp = weights[:, np.newaxis] * J # Element-wise multiply each row by weight
+                    yp = weights * y / params['base_sigma']
+                    Jp = weights[:, np.newaxis] * J / params['base_sigma'] # Element-wise multiply each row by weight
                     theta = theta * 1.414
                     lstsq_worked=True
                     try:
@@ -259,8 +259,8 @@ def snapshot_fgo(measurements, params = default_params):
                                                    compute_Jacobian=True)
             weights = get_rcf_weights(residuals = y,
                                       params = params)
-            yp = weights * y
-            Jp = weights[:, np.newaxis] * J # Element-wise multiply each row by weight
+            yp = weights * y / params['base_sigma']
+            Jp = weights[:, np.newaxis] * J / params['base_sigma'] # Element-wise multiply each row by weight
             lstsq_worked=True
             try:
                 results = np.linalg.lstsq(Jp,yp)
