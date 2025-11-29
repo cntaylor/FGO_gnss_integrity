@@ -11,20 +11,24 @@ if __name__ == "__main__":
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
     
-    samples=10000
+    samples=1000
     try:
         # Do we want to create a new MC run or use an old one?
-        new_mc_run_id = False
-        old_mc_run_id = 2   
+        new_mc_run_id = True
+        old_mc_run_id = 3  
         if new_mc_run_id:
-            mc_description = "MC simulation: Gaussian noise + outliers"
-            noise_std_dev = 5.0  # meters
-            outlier_fraction = 0.10  # 10% outliers
+            mc_description = "MC simulation: four outliers"
+            noise_std_dev = 5.  # meters
+            outlier_set_num = True
+            outlier_fraction = 0.0  # 10% outliers 
             outlier_sd = 100.0  # meters
+            num_outliers = 4
             mc_params = {
                 "simulated": True,
                 "noise_std_dev": noise_std_dev,
-                "outlier_fraction": outlier_fraction,
+                "set_num_outliers": outlier_set_num,
+                "num_outliers": num_outliers,
+                "outlier_fraction": outlier_fraction, # if set_num_outliers is False...
                 "outlier_sd": outlier_sd
             }
             # Create a new Monte Carlo run entry
@@ -45,7 +49,10 @@ if __name__ == "__main__":
             noise_std_dev = mc_params.get("noise_std_dev", -1)
             outlier_fraction = mc_params.get("outlier_fraction", -1)
             outlier_sd = mc_params.get("outlier_sd", -1)
-            if noise_std_dev == -1 or outlier_fraction == -1 or outlier_sd == -1:
+            outlier_set_num = mc_params.get("set_num_outliers", False)
+            num_outliers = mc_params.get("num_outliers", -1)
+            if noise_std_dev == -1 or outlier_sd == -1 or (outlier_set_num and num_outliers == -1) or \
+                (not outlier_set_num and outlier_fraction == -1): 
                 raise ValueError(f"Invalid Monte Carlo parameters in MC_run {mc_run_id}.")
         # Generate Monte Carlo samples
         possible_snapshot_ids = mdu.get_snapshot_ids(conn)
@@ -65,7 +72,12 @@ if __name__ == "__main__":
         for i in range(len(selected_snapshot_ids)):
             snapshot_id = selected_snapshot_ids[i]
             noiseless_pseudoranges = noiseless_data[i]
-            outliers = np.random.rand(len(noiseless_pseudoranges)) < outlier_fraction
+            if outlier_set_num:
+                choose_outliers = np.random.choice(len(noiseless_pseudoranges), size=num_outliers, replace=False)
+                outliers = np.zeros(len(noiseless_pseudoranges), dtype=bool)
+                outliers[choose_outliers] = True
+            else:
+                outliers = np.random.rand(len(noiseless_pseudoranges)) < outlier_fraction
             noise = np.random.normal(0, noise_std_dev, size=len(noiseless_pseudoranges))
             noise[outliers] = np.random.normal(0, outlier_sd, size=np.sum(outliers))
             noisy_pseudoranges = noiseless_pseudoranges + noise
