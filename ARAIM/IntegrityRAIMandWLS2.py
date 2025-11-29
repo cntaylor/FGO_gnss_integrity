@@ -439,14 +439,16 @@ class MultiHypothesisSolutionSeperation():
 		deletedIndices = []
 		# loop over all sats in list, zeroing elements not found in the fault mode
 		for i in range( len(svID) ) :
-			if not find( faultMode, lambda x: x==svID[i]):
+			if not svID[i] in faultMode:
+			# if not find( faultMode, lambda x: x==svID[i]):
 				deletedIndices.append(i)
 				WfaultMode[i] = 0.0
 
 		# now loop over contellationsTracked, zeroing weights if sat is in a constellation not present
 		for i in range( len(self._constellationsTracked) ):
 			# if we can't find a constellation, zero the contribution of all sats from that constellation
-			if not find( faultMode, lambda x: x== self._constellationsTracked[i] ):
+			if not self._constellationsTracked[i] in faultMode:
+			# if not find( faultMode, lambda x: x== self._constellationsTracked[i] ):
 				for j in range(len(svID)):
 					# we know that self.constellationsTracked_[i] is an excluded one,
 					# so zero the weight of all the sats that match this constellation
@@ -826,14 +828,14 @@ class MultiHypothesisSolutionSeperation():
 		ExcIndex = 0
 		exclude_list = []
 		# Step #0 apply nominmal to delta
-		print(self._dx0[0,0:3])
-		print(self._usrPos)
+		# print(self._dx0[0,0:3])
+		# print(self._usrPos)
 		enuDelta = []
 		enuDelta.append( -self._dx0[0,0] )
 		enuDelta.append( -self._dx0[0,1] )
 		enuDelta.append( -self._dx0[0,2] )
 		self._usrPos = navutils.enu2xyz(enuDelta,self._usrPos)
-		print(self._usrPos)
+		# print(self._usrPos)
 		self._clockNom = self._clockNom - self._dx0[0,3] #was ,1.  I think that was an error
 
 		# Step #1 determine Cint and Cacc
@@ -896,13 +898,13 @@ class MultiHypothesisSolutionSeperation():
 
 			exclude_list.append(ExcIndex)
 
-			print(self.numOfModesFailed)
+			# print(self.numOfModesFailed)
 
-			print ("Faulted Satellite: %d"%(ExcIndex))
+			# print ("Faulted Satellite: %d"%(ExcIndex))
 
-			print ("E Fail: %d N Fail: %d V Fail: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
+			# print ("E Fail: %d N Fail: %d V Fail: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
 
-			print ("Fault Sat Plus Failures: %d %d %d %d"%(ExcIndex,self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
+			# print ("Fault Sat Plus Failures: %d %d %d %d"%(ExcIndex,self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
 			
 
 			Gx, Wx, OMCx, svIDx, count, satsXYZx = self.SatExc(ExcIndex, G0, W0, OMC, svID, count, satsXYZ)
@@ -977,13 +979,13 @@ class MultiHypothesisSolutionSeperation():
 
 			if (count3 != 0):
 				exclude_list.append(ExcIndex)
-				print(self.numOfModesFailed)
+				# print(self.numOfModesFailed)
 
-				print ("Faulted Satellite: %d"%(ExcIndex))
+				# print ("Faulted Satellite: %d"%(ExcIndex))
 
-				print ("E Fail: %d N Fail: %d V Fail: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
+				# print ("E Fail: %d N Fail: %d V Fail: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
 
-				print ("Fault Sat Plus Failures: %d %d %d %d"%(ExcIndex,self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
+				# print ("Fault Sat Plus Failures: %d %d %d %d"%(ExcIndex,self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
 			
 
 				Gx2, Wx2, OMCx2, svIDx2, count, satsXYZx2 = self.SatExc(ExcIndex, Gx, Wx, OMCx, svIDx, count, satsXYZx)
@@ -1058,8 +1060,8 @@ class MultiHypothesisSolutionSeperation():
 
 			#f= open("dx0sTestRunT100.txt", 'a')
 			#f.write(str(self._dx0[0,0:3]) + '\n')
-			print(self.numOfModesFailed)
-			print ("E Fail: %d N Fail: %d V Fail: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
+			# print(self.numOfModesFailed)
+			# print ("E Fail: %d N Fail: %d V Fail: %d"%(self.numOfModesFailed[0],self.numOfModesFailed[1],self.numOfModesFailed[2]))
 			#f.close()			
 
 			chiStatus = self.__evalChiSquareOfAllInViewSoln(G0, OMC, count, ExcIndex)
@@ -1286,8 +1288,8 @@ class MultiHypothesisSolutionSeperation():
 		
 		for i in range( nSat ):
 			computed[i] = np.linalg.norm( np.array( satsXYZ[i,:] ) - np.array( usrPos ) ) \
-					+ clockNom \
-					+ Model.dryTrop(satsXYZ[i,:],usrPos)
+					+ clockNom 
+					# + Model.dryTrop(satsXYZ[i,:],usrPos)
 			omc[i] = measuredPR[i] - computed[i]
 		
 		return np.matrix(omc).T
@@ -1323,7 +1325,7 @@ class MultiHypothesisSolutionSeperation():
 		S0=self._AllInViewInvGTWG*G.T*W
 		x,y=np.shape(S0)
 		self._dx0[0,0:x] = (S0 *OMC).T
-		print(self._dx0[0,0:x])
+		# print(self._dx0[0,0:x])
 		# determine worst-case impact from biases Eq. 16 from Blanch
 		b = np.zeros(3)
 		for q in range(3):
@@ -1777,8 +1779,8 @@ class MultiHypothesisSolutionSeperation():
 
 		sigVACC = np.sqrt( e*S0*Cacc*S0.T*e.T )
 
-		print("sigVACC: ")
-		print(sigVACC)
+		# print("sigVACC: ")
+		# print(sigVACC)
 
 		self._thresh4mAt95prcnt = self._kACC*sigVACC # less stringent requirement
 		self._thresh10mFaultFree = self._kFF*sigVACC # more stringent requirement

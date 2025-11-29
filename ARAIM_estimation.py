@@ -72,13 +72,13 @@ ARAIM_class = None
 def init_ARAIM (params : dict) -> None:
     global ARAIM_class
     if ARAIM_class is None:
-        ARAIM_class = MultiHypothesisSolutionSeperation()
+        ARAIM_class = MultiHypothesisSolutionSeperation(printer=False)
     if params.get("araim_set_covariance", True): # Default is True because snapshot_ARAIM() doesn't have satellite IDs
         ARAIM_class._simpleCovMode = True
         ARAIM_class._Cint_simple = params.get("base_sigma", 10.)**2
     if params.get("araim_set_fault_prob", False):
         ARAIM_class._simpleFaultMode = True
-        ARAIM_class._fault_prob = params.get("fault_prob", 0.01)
+        ARAIM_class._fault_prob = params.get("fault_prob", 0.001)
     if params.get("araim_use_bias_for_PL", False):
         ARAIM_class._useBiasForPL = False # Default is true
     if type(params.get("max_bias", False)) is float:
