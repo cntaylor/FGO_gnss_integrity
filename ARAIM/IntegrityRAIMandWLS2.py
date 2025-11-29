@@ -334,18 +334,15 @@ class MultiHypothesisSolutionSeperation():
 					nConstMissing = nConstMissing + 1.0
 					constDropped.append( self._constellationsTracked[i] )
 			# consider the fact that if a const fails, we have to drop all of those sats
-			nSatsOrig=0 # number of sats originally in this mode
-			nSatsDropped =0 # number of sats dropped from mode due to constellation failure
-			nConstOrig = 0 # number of constellation in this mode
+			nSatsOrig = len([x for x in combination if not isinstance(x,str)]) # number of sats in this mode
+			nSatsDropped =0 # number of sats dropped from mode due to constellation failure / to be computed
+			nConstOrig = len([x for x in combination if isinstance(x,str)]) # number of constellation in this mode
 			for const in constDropped:
 				for fault in combination:
 					# if fault is a sat, and it belongs to this const
 					if not isinstance( fault, str ) :
-						nSatsOrig = nSatsOrig +1
 						if const == self.__svid2constellation( fault ):
 							nSatsDropped = nSatsDropped +1
-					else:
-						nConstOrig = nConstOrig +1
 
 			nParmsToSolve = 3 + nConstOrig # 3 position + 1 bias for each const
 			nObsAvailable = nSatsOrig - nSatsDropped
@@ -357,7 +354,7 @@ class MultiHypothesisSolutionSeperation():
 				self._pUnobservable = self._pUnobservable + p
 				continue
 
-			elif (nConstMissing > 0) and (nParmsToSolve > nObsAvailable ):
+			elif (nParmsToSolve > nObsAvailable ):
 				print ( "Deleting Failure Mode due to insufficient obs left Nparms %d, NobsAvail %d"%(nParmsToSolve, nObsAvailable))
 				p, combo = self.__probabilityOfFaultMode( combination, svID)
 				self._pUnobservable = self._pUnobservable + p
