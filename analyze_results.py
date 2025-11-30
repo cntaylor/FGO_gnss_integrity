@@ -108,21 +108,26 @@ if __name__ == '__main__':
     # - 5 = two outliers
     # - 6 = three outliers
     # - 7 = four outliers
-    run_id = 5
-    base_name = 'TwoOutliers'
+    run_id = 7
+    base_name = 'FourOutliers' # Should be the name of the file and, if real data, the DATASET
     results_file = base_name + '_results.pkl'
     errors_file = base_name + '_errors.pkl'
     results, errors = get_errors(results_file, errors_file)
-    # Get the true outliers from the database for comparison
+    simulated_data = True
     conn = sqlite3.connect('meas_data.db')
-    snapshots = mdu.get_mc_sample_ids(conn, run_id)
+    conn = sqlite3.connect('meas_data.db')
+    if simulated_data:
+        # Get the true outliers from the database for comparison
+        snapshots = mdu.get_mc_sample_ids(conn, run_id)
+        true_outliers = mdu.get_mc_samples_outliers(conn, snapshots)
+        # Turn true_outliers into sets of indices
+        true_outlier_sets = [set(np.where(true_outliers[i])[0].tolist()) for i in range(len(true_outliers))]
+    else:
+        snapshots = mdu.get_mc_sample_ids(conn, run_id, dataset_name=base_name)
+        true_outlier_sets = None
     true_positions = mdu.get_mc_sample_truths(conn, snapshots)
-    true_outliers = mdu.get_mc_samples_outliers(conn, snapshots)
-    # Turn true_outliers into sets of indices
-    true_outlier_sets = [set(np.where(true_outliers[i])[0].tolist()) for i in range(len(true_outliers))]
     
     ##### All the data is now read in. Now to process and put out information.
-        
     # Find 3D errors
     errors_3d_enu = {}
     for key in results.keys():
@@ -140,10 +145,29 @@ if __name__ == '__main__':
         for i in range(len(errors_3d_enu[key])):
             chi_sq[key][i] = errors_3d_enu[key][i] @ np.linalg.inv(results[key][3][i][:3,:3]) @ errors_3d_enu[key][i]
     
-    print("ANEES is...")
-    for key in chi_sq.keys():
-        print(f'{key:<18}: {np.mean(chi_sq[key])}')
-    print('\n')
+    # Now let's look at the outliers
+    thresholds = {'GemanMcClure':.2, 'Huber':.4, 'Cauchy':.5}
+    set_comparisons = analyze_outliers(results, thresholds, true_outlier_sets)
+    
+    # Now find out the errors & number of runs for each set:
+    error_per_set = {}
+    runs_per_set = {}
+    for key in set_comparisons.keys():
+        error_per_set[key] = []
+        runs_per_set[key] = []
+        # How to access the errors dict
+        errors_key = key if "_truth" not in key else key[:-6]
+        for i in range(4):
+            if len(set_comparisons[key][i]) > 0:
+                error_per_set[key].append(np.mean(errors[errors_key][set_comparisons[key][i]]))
+                if errors_key != "ARAIM":
+                    runs_per_set[key].append(np.mean(results[errors_key][4][set_comparisons[key][i]]))
+                else:
+                    runs_per_set[key].append(np.nan)
+            else:
+                error_per_set[key].append(np.nan)
+                runs_per_set[key].append(np.nan)
+
     # To start, let's print out computational information
     print ("Average number of lstsq solves...")
     for key in results.keys():
@@ -156,22 +180,27 @@ if __name__ == '__main__':
         else:
             avg_solves = np.mean(results[key][4])
             print(f'{key:<18}: {avg_solves}')
+    ## Did this test and it really didn't show any difference between what type of sets, so not printing anymore
+    # print("\nRuns required broken out by set")
+    # print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
+    # print('-'*85)
+    # sorted_keys = sorted(runs_per_set.keys(), key=lambda x: (x.endswith('_truth'), x))
+    # for key in sorted_keys:
+    #     print('{:<25}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}'.format(key, \
+    #                                                                               len(set_comparisons[key][0]), runs_per_set[key][0], 
+    #                                                                               len(set_comparisons[key][1]), runs_per_set[key][1],
+    #                                                                               len(set_comparisons[key][2]), runs_per_set[key][2],
+    #                                                                               len(set_comparisons[key][3]), runs_per_set[key][3]))
     print('\n')
-    thresholds = {'GemanMcClure':.2, 'Huber':.4, 'Cauchy':.3}
-    set_comparisons = analyze_outliers(results, thresholds, true_outlier_sets)
-    
-    # Now find out the errors for each set:
-    error_per_set = {}
-    for key in set_comparisons.keys():
-        error_per_set[key] = []
-        # How to access the errors dict
-        errors_key = key if "_truth" not in key else key[:-6]
-        for i in range(4):
-            if len(set_comparisons[key][i]) > 0:
-                error_per_set[key].append(np.mean(errors[errors_key][set_comparisons[key][i]]))
-            else:
-                error_per_set[key].append(np.nan)
+
     # Now print out the results
+    print("Overall error statistics:")
+    for key in errors:
+        print(f"  {key:<17} :   Average: {np.mean(errors[key]):7.3f} meters,",\
+              f" Std Dev: {np.std(errors[key]):7.3f} meters,",
+              f" Max: {np.max(errors[key]):7.3f} meters")
+
+
     print("Outlier groups and the average error in each group")
     print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
     print('-'*85)
@@ -198,6 +227,11 @@ if __name__ == '__main__':
             else:
                 chisq_per_set[key].append(np.nan)
     
+
+    print("\nANEES is...")
+    for key in chi_sq.keys():
+        print(f'{key:<18}: {np.mean(chi_sq[key])}')
+    print('\n')
     print("Outlier groups and the average chi squared in each group")
     print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
     print('-'*85)
