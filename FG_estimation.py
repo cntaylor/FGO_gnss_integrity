@@ -49,7 +49,7 @@ def geman_mcclure_weights(residuals, c):
     c : tuning constant (positive scalar)
     """
     denom = 1.0 + (residuals / c) ** 2
-    return 1.0 / (denom ** 2)
+    return 1.0 / denom 
 
 def gnc_geman_mcclure_weights(residuals, c, theta):
     """
@@ -63,7 +63,7 @@ def gnc_geman_mcclure_weights(residuals, c, theta):
     # squared overall.  I think what I actually need it the square root of the weight (since I apply it to both y and J), so I 
     # keep the square root term, but think this is a typo in the Li-Ta paper
     denom = 1.0 + (residuals / c) ** 2 / theta
-    return 1.0 / (denom ** 2)
+    return 1.0 / denom
 
 def gnc_trunc_gauss_weights(residuals, cutoff, theta):
     """
@@ -180,8 +180,10 @@ def snapshot_fgo(measurements, params = default_params):
         if params["rcf"] in ("GemanMcClure", "Geman-McClure", "Geman_McClure"):
             # Equation 23 from Li-Ta paper
             theta = max(3 * max_residual**2 / params.get("geman_c", 2.0)**2, 1.4) # Make sure the loop runs at least once
+            pre_theta_norm = np.linalg.norm(y)
+            y_norm_diff=1000.
             # To perform GNC, will have two loops.  Outer loop reduces theta, inner loop does IRLS
-            while theta > 1.:
+            while theta > 1. and y_norm_diff > .1:
                 # Inner loop: Perform IRLS
                 delta_mag=1000.
                 num_iters = 0
@@ -207,6 +209,9 @@ def snapshot_fgo(measurements, params = default_params):
                         delta_mag = 0.
                     num_iters += 1
                 total_num_iters += num_iters
+                new_y_norm = np.linalg.norm(yp)
+                y_norm_diff = np.abs(new_y_norm - pre_theta_norm)
+                pre_theta_norm = new_y_norm
                 theta = theta / 1.414
         elif params["rcf"] in ("trunc_Gauss", "TruncGauss", "TruncatedGaussian"):
             yp_delta = 10000. #Change in weighted residual
@@ -224,7 +229,7 @@ def snapshot_fgo(measurements, params = default_params):
                     weights = get_gnc_rcf_weights(y, params, theta)
                     yp = weights * y / params['base_sigma']
                     Jp = weights[:, np.newaxis] * J / params['base_sigma'] # Element-wise multiply each row by weight
-                    theta = theta * 1.414
+                    # theta = min(theta * 1.414,1)
                     lstsq_worked=True
                     try:
                         results = np.linalg.lstsq(Jp,yp)
@@ -242,7 +247,7 @@ def snapshot_fgo(measurements, params = default_params):
                         delta_mag = 0.
                     num_iters += 1
                 total_num_iters += num_iters
-                theta = theta * 1.414
+                theta = min(theta * 1.414,1)
                 new_weight_res = np.sum(np.square(yp))
                 yp_delta = np.abs(old_weight_res - new_weight_res)
                 old_weight_res = new_weight_res
