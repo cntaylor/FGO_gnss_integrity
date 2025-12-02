@@ -115,7 +115,6 @@ if __name__ == '__main__':
     results, errors = get_errors(results_file, errors_file)
     simulated_data = True
     conn = sqlite3.connect('meas_data.db')
-    conn = sqlite3.connect('meas_data.db')
     if simulated_data:
         # Get the true outliers from the database for comparison
         snapshots = mdu.get_mc_sample_ids(conn, run_id)
@@ -174,7 +173,14 @@ if __name__ == '__main__':
         if key == "L2" or key == 'truth':
             continue
         if key == "ARAIM":
-            num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
+            if simulated_data:
+                num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
+            else:
+                snapshot_ids = mdu.get_mc_sample_ids(conn, 1, dataset_name=base_name)
+                meas_per_snapshot = mdu.get_mc_samples_measurements(conn, snapshot_ids)
+                num_sats = np.zeros(len(snapshot_ids))
+                for i,meas in enumerate(meas_per_snapshot):
+                    num_sats[i] = len(meas)
             avg_solves = np.mean(num_sats)*2
             print(f'{key:<18}: {avg_solves} (best estimate)')
         else:

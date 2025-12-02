@@ -173,6 +173,27 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
         ax1.axis('equal')
         plt.show()
 
+def run_all_real_results(conn: sqlite3.Connection, test_params: dict, list_methods: list) -> None:
+    run_id = 1
+    test_params["base_sigma"] = 14.4
+    dataset_names = mdu.get_dataset_names(conn)
+    pass_list = []
+    fail_list = []
+    for dataset in dataset_names:
+        print("Running for dataset:", dataset)
+        try:
+            validate_estimation(conn, run_id, dataset, test_params, list_methods,
+                            results_file=dataset+"_results.pkl",
+                            errors_file=dataset+"_errors.pkl",
+                            plot_res=False)
+            pass_list.append(dataset)
+        except:
+            print("Failed for dataset:", dataset)
+            fail_list.append(dataset)
+
+    print("Passed:", pass_list)
+    print("Failed:", fail_list)
+
 if __name__ == '__main__':
     import meas_db_utils as mdu
     import sqlite3
@@ -191,12 +212,9 @@ if __name__ == '__main__':
         # - 5 = two outliers
         # - 6 = three outliers
         # - 7 = four outliers
-        MC_RUN_ID = 1   # Assuming 1 is your real data or target run
-        DATASET = 'UrbanNav_Harsh'  # Example dataset name
-        filename_base = DATASET #'OneOutlier'
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
-            "base_sigma" : 5.0,  # Base measurement noise standard deviation (meters)
+            "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
             "gnc" : False,    # Graduated non-convexity
             "max_iters" : 50, # How many Gauss-Newton steps to allow
             "tolerance" : 1e-4,
@@ -212,13 +230,41 @@ if __name__ == '__main__':
             "max_bias" : 0.0
 
         }
+        methods_compare = ["ARAIM","Huber","Cauchy","GemanMcClure","gnc_trunc_Gauss","gnc_GemanMcClure"]
+        
+        sim = True
+        if sim:
+            sim_run_ids  = [ 3, 4, 5, 7]
+            sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
+            sim_datasets= [None] * len(sim_filenames)
 
-        validate_estimation(conn, MC_RUN_ID, DATASET, test_params, \
-                                ["ARAIM","Huber","Cauchy","GemanMcClure","gnc_trunc_Gauss","gnc_GemanMcClure"],\
-                                results_file = filename_base+"_results.pkl",\
-                                errors_file = filename_base+"_errors.pkl", \
-                                plot_res = False)
-#
+            test_params["base_sigma"] = 5.0
+            for run_id, filename in zip(sim_run_ids[2:], sim_filenames[2:]):
+                validate_estimation(conn, run_id, None, test_params, \
+                                    methods_compare,\
+                                    results_file = filename+"_results.pkl",\
+                                    errors_file = filename+"_errors.pkl", \
+                                    plot_res = False)
+        else:
+            run_id = 1
+            test_params["base_sigma"] = 14.4
+            dataset_names = mdu.get_dataset_names(conn)
+            pass_list = []
+            fail_list = []
+            for dataset in dataset_names:
+                print("Running for dataset:", dataset)
+                try:
+                    validate_estimation(conn, run_id, dataset, test_params, methods_compare,
+                                    results_file=dataset+"_results.pkl",
+                                    errors_file=dataset+"_errors.pkl",
+                                    plot_res=False)
+                    pass_list.append(dataset)
+                except:
+                    print("Failed for dataset:", dataset)
+                    fail_list.append(dataset)
+
+            print("Passed:", pass_list)
+            print("Failed:", fail_list)
     except sqlite3.Error as e:
         print(f"A fatal database error occurred: {e}")
     finally:
