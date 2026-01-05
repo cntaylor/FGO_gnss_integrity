@@ -64,6 +64,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
             results["ARAIM"].append(None) #timing
             results["ARAIM"].append([None] * len(measurements_list)) #outlier info
             results["ARAIM"].append([None] * len(measurements_list)) # PLs
+            results["ARAIM"].append(np.zeros(len(measurements_list), dtype=int) # num_iterations
         else:
             results[method].append(np.zeros((len(measurements_list),3))) # position estimates
             results[method].append(np.zeros(len(measurements_list))) # timing offsets
@@ -81,9 +82,9 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
         for method in methods:
             if method == "ARAIM":
                 print("Running method:", method, "for sample", i)
-                results[method][0][i], _, \
+                results[method][0][i], results[method][4][i], \
                     results[method][2][i], results[method][3][i] = \
-                    snapshot_ARAIM(measurements_array)
+                    single_epoch_ARAIM(measurements_array)
             else:
                 print("Running method:", method)
                 tmp_params = test_params.copy()
@@ -232,14 +233,16 @@ if __name__ == '__main__':
         }
         methods_compare = ["ARAIM","Huber","Cauchy","GemanMcClure","gnc_trunc_Gauss","gnc_GemanMcClure"]
         
-        sim = True
+        sim = False # Basically a way for me to "less manually" run the things that need to be run
         if sim:
             sim_run_ids  = [ 3, 4, 5, 7]
             sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
+            # sim_run_ids = [6]
+            # sim_filenames = ["ThreeOutliers"]
             sim_datasets= [None] * len(sim_filenames)
 
             test_params["base_sigma"] = 5.0
-            for run_id, filename in zip(sim_run_ids[2:], sim_filenames[2:]):
+            for run_id, filename in zip(sim_run_ids, sim_filenames):
                 validate_estimation(conn, run_id, None, test_params, \
                                     methods_compare,\
                                     results_file = filename+"_results.pkl",\
@@ -248,7 +251,7 @@ if __name__ == '__main__':
         else:
             run_id = 1
             test_params["base_sigma"] = 14.4
-            dataset_names = mdu.get_dataset_names(conn)
+            dataset_names = ["UrbanNav_Harsh"] #mdu.get_dataset_names(conn) # -- runs all the datasets at once
             pass_list = []
             fail_list = []
             for dataset in dataset_names:

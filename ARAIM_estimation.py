@@ -87,7 +87,7 @@ def init_ARAIM (params : dict) -> None:
     # Do I need to do a "ISM update" for things to work? It would also set URE and RUA values, 
     # plus pSats and pConstellation  Avoided if in simple mode?
 
-def snapshot_ARAIM (measurements: np.ndarray
+def single_epoch_ARAIM (measurements: np.ndarray
                   ) -> Tuple[np.ndarray, float|None, List[int], Tuple[float,float]]:
     '''
     Run ARAIM on a snapshot of measurements
@@ -116,7 +116,7 @@ def snapshot_ARAIM (measurements: np.ndarray
                 / cu.consts['c'] 
         new_sat_locs[i] = cu.compute_ecef_at_current_time(measurements[i][1:], time_offset)
     # Run ARAIM.  I have no idea of the SV numbers, so random things get passed in
-    HPL, VPL, outlier_info =ARAIM_class.ARAIM(len(new_sat_locs), new_sat_locs,
+    HPL, VPL, outlier_info, normals_solved =ARAIM_class.ARAIM(len(new_sat_locs), new_sat_locs,
                       measurements[:,0], 
                       np.arange(1,len(measurements)+1))
-    return ARAIM_class.getUpdatedPos(), None, outlier_info, (HPL, VPL)
+    return ARAIM_class.getUpdatedPos(), None, outlier_info, (HPL, VPL), normals_solved
