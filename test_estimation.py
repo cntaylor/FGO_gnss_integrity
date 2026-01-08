@@ -3,8 +3,8 @@ import sqlite3
 import numpy as np
 import comp_utils as cu
 import r3f
-from FG_estimation import snapshot_fgo
-from ARAIM_estimation import snapshot_ARAIM, init_ARAIM
+from FG_estimation import single_epoch_fgo
+from ARAIM_estimation import single_epoch_ARAIM, init_ARAIM
 import matplotlib.pyplot as plt
 import pickle
 
@@ -64,7 +64,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
             results["ARAIM"].append(None) #timing
             results["ARAIM"].append([None] * len(measurements_list)) #outlier info
             results["ARAIM"].append([None] * len(measurements_list)) # PLs
-            results["ARAIM"].append(np.zeros(len(measurements_list), dtype=int) # num_iterations
+            results["ARAIM"].append(np.zeros(len(measurements_list), dtype=int)) # num_iterations
         else:
             results[method].append(np.zeros((len(measurements_list),3))) # position estimates
             results[method].append(np.zeros(len(measurements_list))) # timing offsets
@@ -82,8 +82,9 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
         for method in methods:
             if method == "ARAIM":
                 print("Running method:", method, "for sample", i)
-                results[method][0][i], results[method][4][i], \
-                    results[method][2][i], results[method][3][i] = \
+                results[method][0][i], _, \
+                    results[method][2][i], results[method][3][i], \
+                    results[method][4][i] = \
                     single_epoch_ARAIM(measurements_array)
             else:
                 print("Running method:", method)
@@ -104,7 +105,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
                 results[method][0][i], results[method][1][i], \
                     results[method][2][i], results[method][3][i], \
                     results[method][4][i] = \
-                    snapshot_fgo(measurements_array,params=tmp_params)
+                    single_epoch_fgo(measurements_array,params=tmp_params)
         
         
     # Convert lists to NumPy arrays for easy calculation
@@ -211,8 +212,9 @@ if __name__ == '__main__':
         # - 3 = no outliers
         # - 4 = one outlier
         # - 5 = two outliers
-        # - 6 = three outliers
+        # - 6 = three outliers (breaks)
         # - 7 = four outliers
+        # - 8 = three outliers, w/ min num satellites
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
@@ -233,15 +235,17 @@ if __name__ == '__main__':
         }
         methods_compare = ["ARAIM","Huber","Cauchy","GemanMcClure","gnc_trunc_Gauss","gnc_GemanMcClure"]
         
-        sim = False # Basically a way for me to "less manually" run the things that need to be run
+        sim = True # Basically a way for me to "less manually" run the things that need to be run
         if sim:
-            sim_run_ids  = [ 3, 4, 5, 7]
-            sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
-            # sim_run_ids = [6]
-            # sim_filenames = ["ThreeOutliers"]
+            # sim_run_ids  = [ 3, 4, 5, 7]
+            # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
+            sim_run_ids = [8]
+            sim_filenames = ["ThreeOutliers"]
+            # sim_run_ids = [4]
+            # sim_filenames = ["OneOutlier_test"]
             sim_datasets= [None] * len(sim_filenames)
 
-            test_params["base_sigma"] = 5.0
+            test_params["base_sigma"] = 5.0 # For simulated data...  Comment out for real data!
             for run_id, filename in zip(sim_run_ids, sim_filenames):
                 validate_estimation(conn, run_id, None, test_params, \
                                     methods_compare,\

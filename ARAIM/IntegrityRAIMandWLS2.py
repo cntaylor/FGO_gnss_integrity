@@ -815,11 +815,13 @@ class MultiHypothesisSolutionSeperation():
 			HPL - horizontal protection limit (m)
 			VPL - vertical protection limit (m)
 			exclude_list - list of satelites that are excluded
+			num_normals - number of times normal equations are solved
 		"""
 		
 		count = 0
 		count2 = 0
 		count3 = 0
+		num_normals = 0
 		#Time = 10
 		minChi = 0
 		ExcIndex = 0
@@ -848,6 +850,7 @@ class MultiHypothesisSolutionSeperation():
 				self._usrPos, self._clockNom )
 		
 		enuCov0, b0, W0 = self.__wlsAllInViewMatrix( G0, svID, OMC, count, ExcIndex )
+		num_normals += 1
 
 		# Step #3 Determine Fauilts to be Monitored
 		self.__determineNFaultMax()
@@ -884,7 +887,7 @@ class MultiHypothesisSolutionSeperation():
 			
 
 			minChi, ExcIndex = self.minSatPick(G0, W0, OMC, svID, faultMode, minChi, ExcIndex )
-
+		num_normals += self._NFaultModes
 		#f= open("TestfailuresTestRunT1003.txt", 'a')
 		#f.write(str(self.numOfModesFailed) + '\n')
 		#print(ARAIM.numOfModesFailed)
@@ -913,6 +916,7 @@ class MultiHypothesisSolutionSeperation():
 
 
 			enuCov0, b0, W0 = self.__wlsAllInViewMatrix( Gx, svIDx, OMCx, count, ExcIndex )
+			num_normals += 1
 
 			self.__determineNFaultMax()
 			self.__determinePossibleFaultModeCombinations(svIDx)
@@ -948,6 +952,8 @@ class MultiHypothesisSolutionSeperation():
 					dxk[k,:], enuCovSSk[k,:], count3)
 			
 				minChi, ExcIndex = self.minSatPick(Gx, Wx, OMCx, svIDx, faultMode, minChi, ExcIndex )
+
+			num_normals += self._NFaultModes
 
 			#f= open("TestfailuresTestRunT1003.txt", 'a')
 			#f.write(str('Faulted ') + str(self.numOfModesFailed) + '\n')
@@ -994,6 +1000,7 @@ class MultiHypothesisSolutionSeperation():
 				self.__probabilityOfFault(svIDx2)
 
 				enuCov0, b0, W0 = self.__wlsAllInViewMatrix( Gx2, svIDx2, OMCx2, count, ExcIndex )
+				num_normals += 1
 
 				self.__determineNFaultMax()
 				self.__determinePossibleFaultModeCombinations(svIDx2)
@@ -1028,7 +1035,7 @@ class MultiHypothesisSolutionSeperation():
 						dxk[k,:], enuCovSSk[k,:], count3)
 			
 					minChi, ExcIndex = self.minSatPick(Gx2, Wx2, OMCx2, svIDx2, faultMode, minChi, ExcIndex )
-
+				num_normals += self._NFaultModes
 				#f= open("TestfailuresTestRunT1003.txt", 'a')
 				#f.write(str('Faulted ') + str(self.numOfModesFailed) + '\n')
 			#print(ARAIM.numOfModesFailed)
@@ -1078,7 +1085,7 @@ class MultiHypothesisSolutionSeperation():
 
 		
 
-		return HPL, VPL, exclude_list
+		return HPL, VPL, exclude_list, num_normals
 
 
 
@@ -1699,8 +1706,10 @@ class MultiHypothesisSolutionSeperation():
 		for k in range( len( Tk ) ):
 			temp2.append( ( scipy.stats.norm.isf( pHMIAdj / pFaultk[k] ) )*np.sqrt(enuCovk[k,qIndex]) + Tk[k,qIndex] + bk[k,qIndex] )
 		
-		
-		PLlowInit = max( temp1, max(temp2) )
+		if len( temp2 ) > 0:
+			PLlowInit = max( temp1, max(temp2) )
+		else:
+			PLlowInit = temp1
 
 		
 		temp1=  scipy.stats.norm.isf( pHMIAdj / (2.0*(self._NFaultMax + 1.0)))*np.sqrt(enuCov0[qIndex]) + b0[qIndex]
@@ -1712,7 +1721,10 @@ class MultiHypothesisSolutionSeperation():
 			
 			temp2.append( ( scipy.stats.norm.isf( pHMIAdj / ( pFaultk[k]*(self._NFaultMax +1.0 ) ) ) )*np.sqrt(enuCovk[k,qIndex]) + Tk[k,qIndex] + bk[k,qIndex] )
 
-		PLupInit = max( temp1, max(temp2) )
+		if len(temp2) > 0:
+			PLupInit = max( temp1, max(temp2) )
+		else:
+			PLupInit = temp1
 		PLupBound = PLlowInit + ( pHMI - self.__pExceed( PLlowInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex ) )*( PLupInit - PLlowInit )/ \
 				( self.__pExceed(PLupInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex) \
 				- self.__pExceed(PLlowInit, b0, enuCov0,bk, enuCovk, Tk, pFaultk, qIndex) )
