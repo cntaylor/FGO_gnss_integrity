@@ -108,8 +108,8 @@ if __name__ == '__main__':
     # - 5 = two outliers
     # - 6 = three outliers
     # - 7 = four outliers
-    run_id = 7
-    base_name = 'FourOutliers' # Should be the name of the file and, if real data, the DATASET
+    run_id = 4
+    base_name = 'OneOutlier' # Should be the name of the file and, if real data, the DATASET
     results_file = base_name + '_results.pkl'
     errors_file = base_name + '_errors.pkl'
     results, errors = get_errors(results_file, errors_file)
@@ -172,20 +172,21 @@ if __name__ == '__main__':
     for key in results.keys():
         if key == "L2" or key == 'truth':
             continue
-        if key == "ARAIM":
-            if simulated_data:
-                num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
-            else:
-                snapshot_ids = mdu.get_mc_sample_ids(conn, 1, dataset_name=base_name)
-                meas_per_snapshot = mdu.get_mc_samples_measurements(conn, snapshot_ids)
-                num_sats = np.zeros(len(snapshot_ids))
-                for i,meas in enumerate(meas_per_snapshot):
-                    num_sats[i] = len(meas)
-            avg_solves = np.mean(num_sats)*2
-            print(f'{key:<18}: {avg_solves} (best estimate)')
-        else:
-            avg_solves = np.mean(results[key][4])
-            print(f'{key:<18}: {avg_solves}')
+        # if key == "ARAIM":
+        #     if simulated_data:
+        #         num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
+        #     else:
+        #         snapshot_ids = mdu.get_mc_sample_ids(conn, 1, dataset_name=base_name)
+        #         meas_per_snapshot = mdu.get_mc_samples_measurements(conn, snapshot_ids)
+        #         num_sats = np.zeros(len(snapshot_ids))
+        #         for i,meas in enumerate(meas_per_snapshot):
+        #             num_sats[i] = len(meas)
+        #     avg_solves = np.mean(num_sats)*2
+        #     print(f'{key:<18}: {avg_solves} (best estimate)')
+        # else:
+        print('key is', key)
+        avg_solves = np.mean(results[key][4])
+        print(f'{key:<18}: {avg_solves}')
     ## Did this test and it really didn't show any difference between what type of sets, so not printing anymore
     # print("\nRuns required broken out by set")
     # print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
