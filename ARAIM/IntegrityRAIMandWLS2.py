@@ -1697,6 +1697,11 @@ class MultiHypothesisSolutionSeperation():
 			pHMI = self._pHMIHoriz
 
 		pHMIAdj = pHMI*( 1.0 - self._pFaultNotMonitored / ( self._pHMIVert + self._pHMIHoriz ) )
+		# This is a definite hack.  Need real probabilities on things going on (probability of the constellation going bad, for example)
+		# so that pHMIAdj does not go negative.  But fro current sims, just want the error to go away
+		# in the log when this number goes negative.
+		if pHMIAdj < 0:
+			pHMIAdj = .1
 		
 		temp1= ( scipy.stats.norm.isf( pHMIAdj / 2.0 ))*np.sqrt(enuCov0[qIndex]) + b0[qIndex] 
 
