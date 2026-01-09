@@ -7,6 +7,45 @@ from FG_estimation import single_epoch_fgo
 from ARAIM_estimation import epoch_ARAIM, init_ARAIM
 import matplotlib.pyplot as plt
 import pickle
+from multiprocessing import Pool
+from tqdm import tqdm
+
+def single_epoch_results(args):
+    i, measurements_array, methods, test_params = args
+    local_results = {} # will have index + all the methods (and "L2") in the results
+    local_results["index"] = i
+    l2_est_loc = cu.estimate_l2_location(measurements_array)
+    # compute the covariance of the L2 estimation
+    y,J = cu.compute_residual_and_jacobian(measurements_array[:,0], l2_est_loc[0], measurements_array[:,1:], l2_est_loc[1], compute_Jacobian=True)
+    l2_covariance  = np.linalg.inv(J.T @ J) * test_params['base_sigma']**2
+    # local_results["L2"] = (position, timing offset, covariance)
+    local_results["L2"] = (l2_est_loc[0], l2_est_loc[1], l2_covariance)
+    
+    for method in methods:
+        if method == "ARAIM":
+            local_results[method] = epoch_ARAIM(measurements_array)
+        else:
+            # Change the parameters depending on the method name
+            tmp_params = test_params.copy()
+            rcf_method = method
+            if "gnc" in method:
+                tmp_params["gnc"] = True
+                rcf_method = rcf_method.removeprefix("gnc_")
+            else:
+                tmp_params["gnc"] = False
+            if "double" in method: # Double the cut-off values, see the effects.
+                tmp_params["huber_k"] *= 2.0
+                tmp_params["cauchy_c"] *= 2.0
+                tmp_params["geman_c"] *= 2.0
+                tmp_params["trunc_k"] *= 2.0
+                rcf_method = rcf_method.removesuffix("_double")
+            tmp_params["rcf"] = rcf_method
+            # actually run the method
+            local_results[method] = \
+                single_epoch_fgo(measurements_array,params=tmp_params)
+    return local_results
+    
+
 
 def validate_estimation(conn, run_id, dataset_name, test_params, methods,
                         results_file = "results.pkl",
@@ -49,7 +88,6 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
 
     # 3. Run Estimation and Store Results
     init_ARAIM(test_params)
-    print("Done with init_ARAIM")
     # Create data structures to store results  (init lists so it doesn't take so long to run)
     results = {method: [] for method in methods}
     results["truth"] = [truth_list] # All other methods have a list of multiple entries.  This makes
@@ -75,40 +113,29 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
             results[method].append(np.zeros(len(measurements_list),dtype=int)) # num_iterations
             
     # Actually run the results
-
-    for i,measurements_array in enumerate(measurements_list):
-        l2_est_loc = cu.estimate_l2_location(measurements_array)
-        results["L2"][0][i] = l2_est_loc[0] # position
-        results["L2"][1][i] = l2_est_loc[1] # timing offset
-        y,J = cu.compute_residual_and_jacobian(measurements_array[:,0], l2_est_loc[0], measurements_array[:,1:], l2_est_loc[1], compute_Jacobian=True)
-        results["L2"][3][i] = np.linalg.inv(J.T @ J) * test_params['base_sigma']**2
-        for method in methods:
-            if method == "ARAIM":
-                print("Running method:", method, "for sample", i)
-                results[method][0][i], _, \
-                    results[method][2][i], results[method][3][i], \
-                    results[method][4][i] = \
-                    epoch_ARAIM(measurements_array)
-            else:
-                print("Running method:", method)
-                tmp_params = test_params.copy()
-                rcf_method = method
-                if "gnc" in method:
-                    tmp_params["gnc"] = True
-                    rcf_method = rcf_method.removeprefix("gnc_")
-                else:
-                    tmp_params["gnc"] = False
-                if "double" in method: # Double the cut-off values, see the effects.
-                    tmp_params["huber_k"] *= 2.0
-                    tmp_params["cauchy_c"] *= 2.0
-                    tmp_params["geman_c"] *= 2.0
-                    tmp_params["trunc_k"] *= 2.0
-                    rcf_method = rcf_method.removesuffix("_double")
-                tmp_params["rcf"] = rcf_method
-                results[method][0][i], results[method][1][i], \
-                    results[method][2][i], results[method][3][i], \
-                    results[method][4][i] = \
-                    single_epoch_fgo(measurements_array,params=tmp_params)
+    run_parallel = True
+    if run_parallel:
+        tasks = [(i, measurements_array, methods, test_params) for i,measurements_array in enumerate(measurements_list)]
+        with Pool(initializer=init_ARAIM, initargs=(test_params,)) as pool:
+            result_iterator = pool.imap(single_epoch_results, tasks, chunksize=10)
+            for single_result in tqdm(result_iterator, total=len(tasks), desc="Running epochs"):
+                i = single_result["index"]
+                for j in range(3):
+                    results["L2"][j][i] = single_result["L2"][j]
+                for method in methods:
+                    for j in range(len(results[method])):
+                        if method != "ARAIM" or j != 1:
+                            results[method][j][i] = single_result[method][j]
+    else:
+        for i,measurements_array in enumerate(measurements_list):
+            print(f"Running epoch {i}")
+            single_results = single_epoch_results((i, measurements_array,methods, test_params))
+            for j in range(3):
+                results["L2"][j][i] = single_results["L2"][j]
+            for method in methods:
+                for j in range(len(results[method])):
+                    if method != "ARAIM" or j != 1:
+                        results[method][j][i] = single_results[method][j]
         
         
     # Convert lists to NumPy arrays for easy calculation
@@ -220,7 +247,7 @@ if __name__ == '__main__':
             # sim_run_ids  = [ 2, 3, 4, 6]
             # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
             sim_run_ids = [6]
-            sim_filenames = ["FourOutliers"]
+            sim_filenames = ["FourOutliers_parallel"]
             sim_datasets= [None] * len(sim_filenames)
 
             test_params["base_sigma"] = 5.0 # For simulated data...  Comment out for real data!
