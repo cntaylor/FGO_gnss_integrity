@@ -49,26 +49,26 @@ def compute_pseudorange(true_loc: np.ndarray, sat_loc: np.ndarray) -> Tuple[floa
         distance = new_distance
     return distance, curr_sat_loc
 
-def compute_snapshot_pseudoranges(snapshot_data: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
-    true_loc, satellites = snapshot_data
+def compute_epoch_pseudoranges(epoch_data: Tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+    true_loc, satellites = epoch_data
     pseudoranges = np.array([compute_pseudorange(true_loc, s)[0] for s in satellites])
     return pseudoranges
 
-def compute_list_snapshot_pseudoranges(snapshot_data_list: Sequence[Tuple[np.ndarray, np.ndarray]]) -> List[np.ndarray]:
+def compute_list_epoch_pseudoranges(epoch_data_list: Sequence[Tuple[np.ndarray, np.ndarray]]) -> List[np.ndarray]:
     '''
-    Take a list of snapshot_data (like returned from get_snapshot_data in meas_db_utils),
+    Take a list of epoch_data (like returned from get_epoch_data in meas_db_utils),
         then compute the noiseless pseudoranges for each satellite.
 
     Args:
-        snapshot_data: A sequence of tuples, each containing:
+        epoch_data: A sequence of tuples, each containing:
             - true_loc: A numpy array of shape (3,) representing the true receiver location in ECEF coordinates.
             - satellites: A numpy array of shape (N, 3) representing the satellite locations in ECEF coordinates.
 
     Return:
-        A list of numpy arrays, each containing the noiseless pseudoranges for the corresponding snapshot_data entry.
+        A list of numpy arrays, each containing the noiseless pseudoranges for the corresponding epoch_data entry.
     '''
 
-    pseudoranges_list = [compute_snapshot_pseudoranges(sd) for sd in snapshot_data_list]
+    pseudoranges_list = [compute_epoch_pseudoranges(ed) for ed in epoch_data_list]
     return pseudoranges_list
 
 def compute_residual_and_jacobian(measured_pseudoranges: np.ndarray, 
@@ -145,20 +145,20 @@ def compute_satellite_elevation (receiver_loc: np.ndarray, sat_loc: np.ndarray) 
     sat_loc_n = np.dot(C_n_ecef, diff_ecef)
     return np.arctan2(sat_loc_n[2], np.linalg.norm(sat_loc_n))
 
-def test_estimate_l2_roundtrip(snapshot_data: Tuple[np.ndarray, np.ndarray], tol=0.1):
-    """Unit-test helper: For a snapshot_data tuple, build synthetic measurement array
+def test_estimate_l2_roundtrip(epoch_data: Tuple[np.ndarray, np.ndarray], tol=0.1):
+    """Unit-test helper: For a epoch_data tuple, build synthetic measurement array
     from truth+satellites, run estimate_l2_location and assert estimated
     location is within `tol` meters of truth.
 
     Args:
-        snapshot_id_list: Tuple with (truth_data, measurement_data)
+        epoch_id_list: Tuple with (truth_data, measurement_data)
         tol: float tolerance in meters
 
     Returns:
         None, but raises AssertionError on failure.
     """
-    truth, sats = snapshot_data
-    pranges = compute_snapshot_pseudoranges(snapshot_data)
+    truth, sats = epoch_data
+    pranges = compute_epoch_pseudoranges(epoch_data)
     # Build measurement array Nx4: [pseudorange, sat_x, sat_y, sat_z]
     meas = np.hstack([pranges.reshape(-1,1), sats])
     est_loc, est_time = estimate_l2_location(meas)
@@ -170,19 +170,19 @@ def test_estimate_l2_roundtrip(snapshot_data: Tuple[np.ndarray, np.ndarray], tol
 
 
 if __name__ == "__main__":
-    # Do a test on all to snapshots.  This unit test assumes that a database already exist
+    # Do a test on all to epochs.  This unit test assumes that a database already exist
     import meas_db_utils as mdu
     import sqlite3
 
     conn = sqlite3.connect("meas_data.db")
-    snapshot_ids = mdu.get_snapshot_ids(conn) # get all snapshots
-    snapshot_data = mdu.get_snapshot_data(conn, snapshot_ids)
-    for i,sd in enumerate(snapshot_data):
+    epoch_ids = mdu.get_epoch_ids(conn) # get all epochs
+    epoch_data = mdu.get_epoch_data(conn, epoch_ids)
+    for i,sd in enumerate(epoch_data):
         if i % 100 == 0:
             print(f"On i {i}", end='\r', flush=True)
         try:
             test_estimate_l2_roundtrip(sd)
         except:
-            print(f'Unit test failed for snapshot ID {snapshot_ids[i]}')
-            print(f'Data was\n{snapshot_data}')
+            print(f'Unit test failed for epoch ID {epoch_ids[i]}')
+            print(f'Data was\n{epoch_data}')
     print("Unit test completed on comp_utils")

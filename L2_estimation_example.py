@@ -1,10 +1,11 @@
 import sqlite3
 import numpy as np
 import matplotlib.pyplot as plt
-from meas_db_utils import get_MC_sample_ids, get_MC_samples_meas, get_MC_samples_truth, L2_est_location
+from meas_db_utils import get_mc_sample_ids, get_mc_sample_measurements, get_mc_sample_truths
+from comp_utils import estimate_l2_location
 import r3f
 
-def validate_estimation(cursor, run_id, dataset_name):
+def validate_estimation(conn, run_id, dataset_name):
     """
     Performs the full validation loop: data retrieval, estimation, error calculation,
     and prepares results for plotting and statistics.
@@ -13,7 +14,7 @@ def validate_estimation(cursor, run_id, dataset_name):
 
     # 1. Get MC_Sample_IDs
     # Assumes MC_run_ID=1 is the 'real data' run as specified.
-    sample_ids = get_MC_sample_ids(cursor, run_id, dataset_name=dataset_name)
+    sample_ids = get_mc_sample_ids(conn, run_id, dataset_name=dataset_name)
 
     if not sample_ids:
         print("No MC samples found for the specified run and dataset.")
@@ -26,10 +27,10 @@ def validate_estimation(cursor, run_id, dataset_name):
     try:
         # get_measurements returns a list of Nx4 NumPy arrays
         # each entry in the numpy array has [pseudorange, sat_X, sat_Y, sat_Z]
-        measurements_list = get_MC_samples_meas(cursor, to_process) 
+        measurements_list = get_mc_sample_measurements(conn, to_process) 
         
-        # get_MC_samples_truth returns a list of 3-element NumPy arrays
-        truth_list = get_MC_samples_truth(cursor, to_process)
+        # get_mc_sample_truths returns a list of 3-element NumPy arrays
+        truth_list = get_mc_sample_truths(conn, to_process)
         
         # Sanity Check: Ensure the lists are the same length
         if len(measurements_list) != len(truth_list):
@@ -48,7 +49,7 @@ def validate_estimation(cursor, run_id, dataset_name):
     time_offsets = np.zeros(len(measurements_list))
     
     for i,measurements_array in enumerate(measurements_list):
-        est_loc = L2_est_location(measurements_array)
+        est_loc = estimate_l2_location(measurements_array)
         estimated_locations[i] = est_loc[0].copy()
         time_offsets[i] = est_loc[1]
         
@@ -157,17 +158,16 @@ def validate_estimation(cursor, run_id, dataset_name):
 # --- MAIN EXECUTION BLOCK (Conceptual) ---
 
 if __name__ == '__main__':
-    DB_FILE = "meas_data.db"
+    DB_FILE = "meas_data2.db"
     
     try:
         conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
 
         # The parameters requested by the user:
         MC_RUN_ID = 1      # Assuming 1 is your real data or target run
         DATASET = 'Berlin_Potsdamer'  # Example dataset name
 
-        validate_estimation(cursor, MC_RUN_ID, DATASET)
+        validate_estimation(conn, MC_RUN_ID, DATASET)
 
     except sqlite3.Error as e:
         print(f"A fatal database error occurred: {e}")

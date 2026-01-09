@@ -33,7 +33,7 @@ def analyze_outliers(results, thresholds, true_outliers=None):
         results: dictionary of results from the ARAIM and FGO methods
         thresholds: dictionary of thresholds for the FGO method 
             (keyed by method name, same as in results).  Uses .1 if key is not found
-        true_outliers: list of truth outliers  per snapshot(only obtainable for simulated data)
+        true_outliers: list of truth outliers  per epoch(only obtainable for simulated data)
 
     Returns:
         A dictionary with keys same as results (without ARAIM or L2), each with the 4 lists above.
@@ -100,15 +100,14 @@ if __name__ == '__main__':
     ''' Comment pasted from test_estimation...
     '''
     # The parameters requested by the user:
-    # run_id: 
-    # - 1 = real data
-    # - 2 = no outliers, no noise (for debugging)
-    # - 3 = no outliers
-    # - 4 = one outlier
-    # - 5 = two outliers
-    # - 6 = three outliers
-    # - 7 = four outliers
-    run_id = 4
+        # run_id: 
+        # - 1 = real data
+        # - 2 = no outliers
+        # - 3 = one outlier
+        # - 4 = two outliers
+        # - 5 = three outliers
+        # - 6 = four outliers
+    run_id = 3
     base_name = 'OneOutlier' # Should be the name of the file and, if real data, the DATASET
     results_file = base_name + '_results.pkl'
     errors_file = base_name + '_errors.pkl'
@@ -117,14 +116,14 @@ if __name__ == '__main__':
     conn = sqlite3.connect('meas_data.db')
     if simulated_data:
         # Get the true outliers from the database for comparison
-        snapshots = mdu.get_mc_sample_ids(conn, run_id)
-        true_outliers = mdu.get_mc_samples_outliers(conn, snapshots)
+        epochs = mdu.get_mc_sample_ids(conn, run_id)
+        true_outliers = mdu.get_mc_sample_outliers(conn, epochs)
         # Turn true_outliers into sets of indices
         true_outlier_sets = [set(np.where(true_outliers[i])[0].tolist()) for i in range(len(true_outliers))]
     else:
-        snapshots = mdu.get_mc_sample_ids(conn, run_id, dataset_name=base_name)
+        epochs = mdu.get_mc_sample_ids(conn, run_id, dataset_name=base_name)
         true_outlier_sets = None
-    true_positions = mdu.get_mc_sample_truths(conn, snapshots)
+    true_positions = mdu.get_mc_sample_truths(conn, epochs)
     
     ##### All the data is now read in. Now to process and put out information.
     # Find 3D errors
@@ -176,10 +175,10 @@ if __name__ == '__main__':
         #     if simulated_data:
         #         num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
         #     else:
-        #         snapshot_ids = mdu.get_mc_sample_ids(conn, 1, dataset_name=base_name)
-        #         meas_per_snapshot = mdu.get_mc_samples_measurements(conn, snapshot_ids)
-        #         num_sats = np.zeros(len(snapshot_ids))
-        #         for i,meas in enumerate(meas_per_snapshot):
+        #         epoch_ids = mdu.get_mc_sample_ids(conn, 1, dataset_name=base_name)
+        #         meas_per_epoch = mdu.get_mc_sample_measurements(conn, epoch_ids)
+        #         num_sats = np.zeros(len(epoch_ids))
+        #         for i,meas in enumerate(meas_per_epoch):
         #             num_sats[i] = len(meas)
         #     avg_solves = np.mean(num_sats)*2
         #     print(f'{key:<18}: {avg_solves} (best estimate)')

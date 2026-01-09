@@ -73,7 +73,7 @@ def init_ARAIM (params : dict) -> None:
     global ARAIM_class
     if ARAIM_class is None:
         ARAIM_class = MultiHypothesisSolutionSeperation(printer=False)
-    if params.get("araim_set_covariance", True): # Default is True because snapshot_ARAIM() doesn't have satellite IDs
+    if params.get("araim_set_covariance", True): # Default is True because epoch_ARAIM() doesn't have satellite IDs
         ARAIM_class._simpleCovMode = True
         ARAIM_class._Cint_simple = params.get("base_sigma", 10.)**2
     if params.get("araim_set_fault_prob", False):
@@ -87,10 +87,10 @@ def init_ARAIM (params : dict) -> None:
     # Do I need to do a "ISM update" for things to work? It would also set URE and RUA values, 
     # plus pSats and pConstellation  Avoided if in simple mode?
 
-def single_epoch_ARAIM (measurements: np.ndarray
+def epoch_ARAIM (measurements: np.ndarray
                   ) -> Tuple[np.ndarray, float|None, List[int], Tuple[float,float]]:
     '''
-    Run ARAIM on a snapshot of measurements
+    Run ARAIM on a single epoch
 
     Returns:
         est_location: A numpy array of shape (3,) representing the estimated location in ECEF coordinates.
@@ -100,7 +100,7 @@ def single_epoch_ARAIM (measurements: np.ndarray
     '''
     global ARAIM_class
     if ARAIM_class is None:
-        print('To use snapshot_ARAIM, should really run initialization first')
+        print('To use epoch_ARAIM, should really run initialization first')
         print('with the parameters that you want.  Doing some default parameters for now.')
         init_ARAIM()
     # Run WLS estimation 

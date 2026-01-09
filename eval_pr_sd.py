@@ -42,11 +42,11 @@ def compute_pseudorange_errors(db_name = 'meas_data.db', out_file_name='pseudora
     conn = sqlite3.connect(db_name)
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT DISTINCT Dataset FROM Snapshots")
+        cursor.execute("SELECT DISTINCT Dataset FROM Epochs")
         datasets = [row[0] for row in cursor.fetchall()]
         print("Available datasets:", datasets)
     except sqlite3.OperationalError as e:
-        print("Error querying snapshot table:", e)
+        print("Error querying epoch table:", e)
     finally:
         cursor.close()
 
@@ -56,15 +56,15 @@ def compute_pseudorange_errors(db_name = 'meas_data.db', out_file_name='pseudora
         try:
             sample_ids = mdu.get_mc_sample_ids(conn, 1, dataset)
             truths = mdu.get_mc_sample_truths(conn, sample_ids)
-            measurements = mdu.get_mc_samples_measurements(conn, sample_ids)
+            measurements = mdu.get_mc_sample_measurements(conn, sample_ids)
         except Exception as e:
             print("Error thrown getting data from database",e)
-        true_prs = [cu.compute_snapshot_pseudoranges((truth,meas[:,1:])) \
+        true_prs = [cu.compute_epoch_pseudoranges((truth,meas[:,1:])) \
             for truth,meas in zip(truths,measurements)]
         dataset_errors = []
-        for snapshot_truth,snapshot_meas in zip(true_prs,measurements):
-            snapshot_errors = snapshot_truth-snapshot_meas[:,0]
-            dataset_errors.extend(snapshot_errors - np.mean(snapshot_errors)) # Adjust for the receiver clock... :)
+        for epoch_truth,epoch_meas in zip(true_prs,measurements):
+            epoch_errors = epoch_truth-epoch_meas[:,0]
+            dataset_errors.extend(epoch_errors - np.mean(epoch_errors)) # Adjust for the receiver clock... :)
         pr_errors[dataset] = dataset_errors
     try:
         np.savez_compressed('pseudorange_errors.npz',
@@ -76,7 +76,7 @@ def compute_pseudorange_errors(db_name = 'meas_data.db', out_file_name='pseudora
         conn.close()
 
 if __name__ == "__main__":
-    # Get a whole bunch of snapshots and compute the error in pseudorange for each one
+    # Get a whole bunch of epochs and compute the error in pseudorange for each one
     db_name = "meas_data.db"
     error_storage_file = 'pseudorange_errors.npz'
     first_time = False

@@ -2,6 +2,8 @@
 .vscode/
 .venv
 __pycache__/
+data/
+SubmissionResults/
 .python-version
 *.pyc
 *.db

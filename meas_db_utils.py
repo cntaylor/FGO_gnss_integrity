@@ -1,13 +1,13 @@
 """meas_db_utils
 
-Lightweight utilities for accessing measurement and snapshot data from the
+Lightweight utilities for accessing measurement and epoch data from the
 local SQLite schema and a small set of pure-numpy GNSS helper functions.
 
 There is a split for all database functions (this file) and all computation
 utilities (comp_utils.py)
 
 Expectations:
-- Database schema contains tables: Snapshots, Satellite_Locations, MC_Samples,
+- Database schema contains tables: Epochs, Satellite_Locations, MC_Samples,
   Measurements with the columns referenced below.
 - Numpy arrays are used for locations and measurement matrices.
 
@@ -22,6 +22,7 @@ import sqlite3
 import logging
 from typing import List, Tuple, Sequence, Optional
 import json
+import os
 
 import numpy as np
 
@@ -30,43 +31,43 @@ if not logging.getLogger().handlers:
     # Basic configuration when module used directly
     logging.basicConfig(level=logging.INFO)
 
-def get_snapshot_ids(conn: sqlite3.Connection, dataset_name: Optional[str] = None) -> List[int]:
+def get_epoch_ids(conn: sqlite3.Connection, dataset_name: Optional[str] = None) -> List[int]:
     '''
-    Returns a unique list of all Snapshot_IDs.
+    Returns a unique list of all Epoch_IDs.
 
     Args:
         conn (sqlite3.Connection): An active database connection object.
-        dataset_name (str, optional): If provided, returns Snapshot_IDs 
+        dataset_name (str, optional): If provided, returns Epoch_IDs 
                                       associated only with this Dataset.
-                                      If None, returns all unique Snapshot_IDs.
+                                      If None, returns all unique Epoch_IDs.
 
     Returns:
-        list: A list of integers representing the unique Snapshot_IDs.
+        list: A list of integers representing the unique Epoch_IDs.
     '''
     cursor = conn.cursor()
     try:
-        sql_query = "SELECT DISTINCT Snapshot_ID FROM Snapshots"
+        sql_query = "SELECT DISTINCT Epoch_ID FROM Epochs"
         params = []
         if dataset_name is not None:
             sql_query += " WHERE Dataset = ?"
             params.append(dataset_name)
-        sql_query += " ORDER BY Snapshot_ID ASC;"
+        sql_query += " ORDER BY Epoch_ID ASC;"
         cursor.execute(sql_query, tuple(params))
         rows = cursor.fetchall()
         return [r[0] for r in rows]
     except sqlite3.Error as e:
-        log.error("An error occurred while retrieving Snapshot IDs: %s", e)
+        log.error("An error occurred while retrieving Epoch IDs: %s", e)
         raise
     finally:
         cursor.close()
 
-def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Sequence[int]) -> List[Tuple[np.ndarray, np.ndarray]]:
+def get_epoch_data(conn: sqlite3.Connection, epoch_ids: Sequence[int]) -> List[Tuple[np.ndarray, np.ndarray]]:
     '''
-    Retrieves truth and satellite location data for one or more Snapshot_IDs.
+    Retrieves truth and satellite location data for one or more Epoch_IDs.
     
     Args:
         conn (sqlite3.Connection): An active database connection object.
-        snapshot_ids (list/tuple of int): The Snapshot_IDs for which to retrieve data.
+        epoch_ids (list/tuple of int): The Epoch_IDs for which to retrieve data.
 
     Returns a list of tuples, where each tuple is: 
       (truth_location_numpy_array, satellite_locations_numpy_array).
@@ -76,42 +77,42 @@ def get_snapshot_data(conn: sqlite3.Connection, snapshot_ids: Sequence[int]) -> 
     cursor = conn.cursor()
     try:
         # Normalize input
-        unique_ids = list(set(snapshot_ids))
+        unique_ids = list(set(epoch_ids))
         placeholders = ', '.join(['?'] * len(unique_ids))
 
-        results_map = {sid: {'truth': None, 'sats': []} for sid in unique_ids}
+        results_map = {eid: {'truth': None, 'sats': []} for eid in unique_ids}
 
         # Truths
         cursor.execute(f"""
-            SELECT Snapshot_ID, T.True_Loc_X, T.True_Loc_Y, T.True_Loc_Z
-            FROM Snapshots T
-            WHERE Snapshot_ID IN ({placeholders})
+            SELECT Epoch_ID, T.True_Loc_X, T.True_Loc_Y, T.True_Loc_Z
+            FROM Epochs T
+            WHERE Epoch_ID IN ({placeholders})
         """, unique_ids)
         for row in cursor.fetchall():
-            sid = row[0]
-            results_map[sid]['truth'] = np.array(row[1:])
+            eid = row[0]
+            results_map[eid]['truth'] = np.array(row[1:])
 
         # Satellite locations
         cursor.execute(f"""
-            SELECT S.Snapshot_ID, S.Loc_X, S.Loc_Y, S.Loc_Z
+            SELECT S.Epoch_ID, S.Loc_X, S.Loc_Y, S.Loc_Z
             FROM Satellite_Locations S
-            WHERE Snapshot_ID IN ({placeholders})
-            ORDER BY Snapshot_ID, Satellite_num ASC
+            WHERE Epoch_ID IN ({placeholders})
+            ORDER BY Epoch_ID, Satellite_num ASC
         """, unique_ids)
         for row in cursor.fetchall():
-            sid = row[0]
-            if sid in results_map:
-                results_map[sid]['sats'].append(row[1:])
+            eid = row[0]
+            if eid in results_map:
+                results_map[eid]['sats'].append(row[1:])
 
         final_output = []
-        for sid in snapshot_ids:
-            if sid not in results_map or results_map[sid]['truth'] is None:
-                raise ValueError(f'Data not found in database for Snapshot_ID {sid}')
-            data = results_map[sid]
+        for eid in epoch_ids:
+            if eid not in results_map or results_map[eid]['truth'] is None:
+                raise ValueError(f'Data not found in database for Epoch_ID {eid}')
+            data = results_map[eid]
             truth_data = data['truth']
             sat_list = data['sats']
             if len(sat_list) == 0:
-                raise ValueError(f'Missing satellite data for Snapshot_ID {sid}')
+                raise ValueError(f'Missing satellite data for Epoch_ID {eid}')
             sat_array = np.array(sat_list)
             final_output.append((truth_data, sat_array))
 
@@ -144,8 +145,8 @@ def get_mc_sample_ids(conn: sqlite3.Connection, mc_run_id: int, dataset_name: Op
         params = [mc_run_id]
         where_clauses = ["MCS.MC_Run_ID = ?"]
         if dataset_name is not None:
-            sql_query += " JOIN Snapshots S ON MCS.Snapshot_ID = S.Snapshot_ID"
-            where_clauses.append("S.Dataset = ?")
+            sql_query += " JOIN Epochs E ON MCS.Epoch_ID = E.Epoch_ID"
+            where_clauses.append("E.Dataset = ?")
             params.append(dataset_name)
         if where_clauses:
             sql_query += " WHERE " + " AND ".join(where_clauses)
@@ -158,7 +159,7 @@ def get_mc_sample_ids(conn: sqlite3.Connection, mc_run_id: int, dataset_name: Op
     finally:
         cursor.close()
 
-def get_mc_samples_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
+def get_mc_sample_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
     '''
     Retrieves the complete measurement and associated satellite location data 
     for a list of MC_Sample_IDs.
@@ -179,7 +180,7 @@ def get_mc_samples_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequenc
     try:
         unique_ids = list(set(mc_sample_ids))
         placeholders = ', '.join(['?'] * len(unique_ids))
-        grouped_data = {sid: [] for sid in unique_ids}
+        grouped_data = {eid: [] for eid in unique_ids}
 
         cursor.execute(f"""
             SELECT 
@@ -191,7 +192,7 @@ def get_mc_samples_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequenc
             FROM Measurements MS
             JOIN MC_Samples M ON MS.MC_Sample_ID = M.MC_Sample_ID
             JOIN Satellite_Locations L ON 
-                M.Snapshot_ID = L.Snapshot_ID AND 
+                M.Epoch_ID = L.Epoch_ID AND 
                 MS.Satellite_num = L.Satellite_num
             WHERE MS.MC_Sample_ID IN ({placeholders})
             ORDER BY MS.MC_Sample_ID ASC, MS.Satellite_num ASC;
@@ -217,7 +218,7 @@ def get_mc_samples_measurements(conn: sqlite3.Connection, mc_sample_ids: Sequenc
     finally:
         cursor.close()
 
-def get_mc_samples_outliers(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
+def get_mc_sample_outliers(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
     '''
     Retrieves the complete outlier information for a list of MC_Sample_IDs.
 
@@ -237,7 +238,7 @@ def get_mc_samples_outliers(conn: sqlite3.Connection, mc_sample_ids: Sequence[in
     try:
         unique_ids = list(set(mc_sample_ids))
         placeholders = ', '.join(['?'] * len(unique_ids))
-        grouped_data = {sid: [] for sid in unique_ids}
+        grouped_data = {eid: [] for eid in unique_ids}
 
         cursor.execute(f"""
             SELECT 
@@ -270,7 +271,7 @@ def get_mc_samples_outliers(conn: sqlite3.Connection, mc_sample_ids: Sequence[in
 
 def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int]) -> List[np.ndarray]:
     '''
-    Retrieves the truth location (X, Y, Z) for each associated snapshot ID 
+    Retrieves the truth location (X, Y, Z) for each associated epoch ID 
     for a list of MC_Sample_IDs. Throws an error if any requested ID is not found.
 
     Args:
@@ -297,11 +298,11 @@ def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int])
         cursor.execute(f"""
             SELECT 
                 M.MC_Sample_ID,
-                S.True_Loc_X,
-                S.True_Loc_Y,
-                S.True_Loc_Z
+                E.True_Loc_X,
+                E.True_Loc_Y,
+                E.True_Loc_Z
             FROM MC_Samples M
-            JOIN Snapshots S ON M.Snapshot_ID = S.Snapshot_ID
+            JOIN Epochs E ON M.Epoch_ID = E.Epoch_ID
             WHERE M.MC_Sample_ID IN ({placeholders})
         """, unique_ids)
 
@@ -325,7 +326,7 @@ def get_mc_sample_truths(conn: sqlite3.Connection, mc_sample_ids: Sequence[int])
 def get_dataset_names(conn: sqlite3.Connection) -> List[str]:
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT DISTINCT Dataset FROM Snapshots")
+        cursor.execute("SELECT DISTINCT Dataset FROM Epochs")
         return [row[0] for row in cursor.fetchall()]
     except sqlite3.Error as e:
         log.error('An error occurred during dataset name retrieval: %s', e)
@@ -347,7 +348,7 @@ def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Seque
         mc_run_id (int): The ID of the Monte Carlo run (must exist in MC_Runs).
         data_list (list): A list of dictionaries.  Each dictionary will have:
             Required:
-                - 'Snapshot_ID': The ID of the snapshot (must exist in Snapshots).
+                - 'Epoch_ID': The ID of the epoch (must exist in Epochs).
                 - 'pseudoranges': A 1D numpy array of pseudorange measurements.
             Optional:
                 - 'is_outlier': A 1D numpy array of integers (0 or 1) indicating outliers. (Same length as pseudoranges)
@@ -361,64 +362,64 @@ def insert_mc_samples(conn: sqlite3.Connection, mc_run_id: int, data_list: Seque
 
     try:
         # --- 1. Pre-fetch Satellite Counts ---
-        # Get the expected number of satellites for every unique Snapshot_ID in the input list.
-        snapshot_ids = [data['Snapshot_ID'] for data in data_list]
-        unique_ids = list(set(snapshot_ids))
+        # Get the expected number of satellites for every unique Epoch_ID in the input list.
+        epoch_ids = [data['Epoch_ID'] for data in data_list]
+        unique_ids = list(set(epoch_ids))
 
         if not unique_ids:
             return
 
         placeholders = ', '.join(['?'] * len(unique_ids))
 
-        # Query to count satellites for all relevant snapshots in one go
+        # Query to count satellites for all relevant epochs in one go
         cursor.execute(f"""
-            SELECT Snapshot_ID, COUNT(Satellite_num)
+            SELECT Epoch_ID, COUNT(Satellite_num)
             FROM Satellite_Locations
-            WHERE Snapshot_ID IN ({placeholders})
-            GROUP BY Snapshot_ID;
+            WHERE Epoch_ID IN ({placeholders})
+            GROUP BY Epoch_ID;
         """, unique_ids)
 
-        # Map: {Snapshot_ID: count_of_satellites}
+        # Map: {Epoch_ID: count_of_satellites}
         sat_counts = dict(cursor.fetchall())
 
         # --- 2. Process and Insert Data Transaction by Transaction ---
 
-        for snapshot_dict in data_list:
-            # Begin a transaction for this snapshot (crucial for integrity check)
+        for epoch_dict in data_list:
+            # Begin a transaction for this epoch (crucial for integrity check)
             cursor.execute("BEGIN TRANSACTION")
 
-            snapshot_id = snapshot_dict['Snapshot_ID']
-            pseudorange_array = snapshot_dict['pseudoranges']
+            epoch_id = epoch_dict['Epoch_ID']
+            pseudorange_array = epoch_dict['pseudoranges']
             # A. VALIDATION CHECKS
-            expected_count = sat_counts.get(snapshot_id)
+            expected_count = sat_counts.get(epoch_id)
             actual_count = pseudorange_array.size
             outlier_array_valid = False
 
             if expected_count is None:
-                # This could mean the Snapshot_ID doesn't exist or has no satellites
-                raise ValueError(f"Snapshot_ID {snapshot_id} not found or has no satellite data in Satellite_Locations.")
+                # This could mean the Epoch_ID doesn't exist or has no satellites
+                raise ValueError(f"Epoch_ID {epoch_id} not found or has no satellite data in Satellite_Locations.")
 
             if actual_count != expected_count:
                 # Check you have the right number of satellites in the pseudorange data
                 raise ValueError(
-                    f"Pseudorange array for Snapshot_ID {snapshot_id} is incorrect size. "
+                    f"Pseudorange array for Epoch_ID {epoch_id} is incorrect size. "
                     f"Expected {expected_count} satellites, got {actual_count} measurements."
                 )
 
-            if 'is_outlier' in snapshot_dict:
-                is_outlier_array = snapshot_dict['is_outlier']
+            if 'is_outlier' in epoch_dict:
+                is_outlier_array = epoch_dict['is_outlier']
                 if is_outlier_array.size != expected_count:
                     raise ValueError(
-                        f"Is_Outlier array for Snapshot_ID {snapshot_id} is incorrect size. "
+                        f"Is_Outlier array for Epoch_ID {epoch_id} is incorrect size. "
                         f"Expected {expected_count}, got {is_outlier_array.size}."
                     )
                 outlier_array_valid = True
 
             # B. INSERT INTO MC_SAMPLES
             cursor.execute("""
-                INSERT INTO MC_Samples (MC_Run_ID, Snapshot_ID)
+                INSERT INTO MC_Samples (MC_Run_ID, Epoch_ID)
                 VALUES (?, ?)
-            """, (mc_run_id, snapshot_id))
+            """, (mc_run_id, epoch_id))
 
             new_mc_sample_id = cursor.lastrowid
 
@@ -471,12 +472,12 @@ def create_measurement_database(db_name="measurement_data.db"):
 
         print(f"Database '{db_name}' connected successfully.")
 
-        # --- 1. SNAPSHOT TABLE ---
+        # --- 1. EPOCH TABLE ---
         # Stores true location information for the main object at each time step.
-        # Primary Key is the snapshot.
+        # Primary Key is the epoch.
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS Snapshots (
-                Snapshot_ID         INTEGER PRIMARY KEY AUTOINCREMENT,
+            CREATE TABLE IF NOT EXISTS Epochs (
+                Epoch_ID         INTEGER PRIMARY KEY AUTOINCREMENT,
                 Dataset             TEXT    NOT NULL,
                 Time                REAL    NOT NULL,
                 True_Loc_X          REAL    NOT NULL,
@@ -484,20 +485,20 @@ def create_measurement_database(db_name="measurement_data.db"):
                 True_Loc_Z          REAL    NOT NULL
             );
         """)
-        print("Table 'Snapshots' created.")
+        print("Table 'Epochs' created.")
 
         # --- 2. SATELLITE LOCATION TABLE ---
-        # Stores the location of each satellite for a given Snapshot.
+        # Stores the location of each satellite for a given Epoch.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Satellite_Locations (
-                Snapshot_ID     INTEGER NOT NULL,
+                Epoch_ID     INTEGER NOT NULL,
                 Satellite_num   INTEGER NOT NULL,
                 Loc_X           REAL    NOT NULL,
                 Loc_Y           REAL    NOT NULL,
                 Loc_Z           REAL    NOT NULL,
-                PRIMARY KEY (Snapshot_ID, Satellite_num),
-                FOREIGN KEY (Snapshot_ID) 
-                    REFERENCES Snapshots (Snapshot_ID)
+                PRIMARY KEY (Epoch_ID, Satellite_num),
+                FOREIGN KEY (Epoch_ID) 
+                    REFERENCES Epochs (Epoch_ID)
             );
         """)
         print("Table 'Satellite_Locations' created.")
@@ -524,16 +525,16 @@ def create_measurement_database(db_name="measurement_data.db"):
         """, ('Real Data (No Monte Carlo Simulation)', real_data_params))
         
         # --- 4. MONTE CARLO SAMPLES TABLE (The link table) ---
-        # Links a specific timestep/snapshot to the MC run used to generate measurements.
+        # Links a specific timestep/epoch to the MC run used to generate measurements.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS MC_Samples (
                 MC_Sample_ID    INTEGER PRIMARY KEY AUTOINCREMENT,
                 MC_Run_ID       INTEGER NOT NULL,
-                Snapshot_ID     INTEGER NOT NULL,
+                Epoch_ID     INTEGER NOT NULL,
 
                 -- FK to ensure the time step exists
-                FOREIGN KEY (Snapshot_ID)
-                    REFERENCES Snapshots (Snapshot_ID),
+                FOREIGN KEY (Epoch_ID)
+                    REFERENCES Epochs (Epoch_ID),
                 
                 -- FK to ensure the parameters exist
                 FOREIGN KEY (MC_Run_ID)
@@ -569,18 +570,18 @@ def create_measurement_database(db_name="measurement_data.db"):
             BEFORE INSERT ON Measurements
             FOR EACH ROW
             BEGIN
-                -- Look up the Snapshot_ID from the MC_Samples table
+                -- Look up the Epoch_ID from the MC_Samples table
                 SELECT CASE
                     WHEN NOT EXISTS (
                         SELECT 1 
                         FROM Satellite_Locations AS SL
-                        JOIN MC_Samples AS MS ON MS.Snapshot_ID = SL.Snapshot_ID
+                        JOIN MC_Samples AS MS ON MS.Epoch_ID = SL.Epoch_ID
                         WHERE 
                             MS.MC_Sample_ID = NEW.MC_Sample_ID AND 
                             SL.Satellite_num = NEW.Satellite_num
                     )
                     -- If the joint condition is NOT met, RAISE an abort error
-                    THEN RAISE (ABORT, 'Integrity violation: Satellite does not exist for the linked snapshot.')
+                    THEN RAISE (ABORT, 'Integrity violation: Satellite does not exist for the linked epoch.')
                 END;
             END;
         """)
@@ -639,7 +640,8 @@ def create_measurement_database(db_name="measurement_data.db"):
 def insert_real_data(conn: sqlite3.Connection,
                      dataset_name: str,
                      truth_filename: str,
-                     input_filename: str) -> bool:
+                     input_filename: str,
+                     file_path: str = None) -> bool:
     '''
     Inserts real measurement data into the database from provided files.
 
@@ -654,7 +656,11 @@ def insert_real_data(conn: sqlite3.Connection,
     '''
     try:
         cursor = conn.cursor()
-        snapshot_time_sync = {}
+        epoch_time_sync = {}
+
+        if file_path is not None:
+            truth_filename = os.path.join(file_path, truth_filename)
+            input_filename = os.path.join(file_path, input_filename)
 
         with open(truth_filename, 'r') as file:
             for line in file:
@@ -669,19 +675,19 @@ def insert_real_data(conn: sqlite3.Connection,
                         print("Skipping line due to invalid number format: %s", line.strip(), exc_info=True)
                         continue
                     cursor.execute("""
-                        INSERT INTO Snapshots (Dataset, Time, True_Loc_x, True_Loc_Y, True_Loc_Z)
+                        INSERT INTO Epochs (Dataset, Time, True_Loc_x, True_Loc_Y, True_Loc_Z)
                         VALUES (?, ?, ?, ?, ?)
                     """, (dataset_name, time_value, x_loc, y_loc, z_loc))
-                    new_snapshot_id = cursor.lastrowid
-                    snapshot_time_sync[time_value] = new_snapshot_id
+                    new_epoch_id = cursor.lastrowid
+                    epoch_time_sync[time_value] = new_epoch_id
                 else:
                     print("Invalid line in GT: %s", line.strip(), exc_info=True)
         conn.commit()
-        print('Created snapshots from ground truth data.')
+        print('Created epochs from ground truth data.')
 
         with open(input_filename, 'r') as file:
             sat_num = 0
-            snapshot_ID = None
+            epoch_ID = None
             curr_time = 0
             line_counter = 0
             mc_sample_id = None
@@ -702,41 +708,41 @@ def insert_real_data(conn: sqlite3.Connection,
                         print("Error parsing pseudorange line")
                         continue
 
-                    # Detect a new snapshot
-                    if time_value != curr_time or snapshot_ID is None:
-                        if snapshot_ID is not None:
+                    # Detect a new epoch
+                    if time_value != curr_time or epoch_ID is None:
+                        if epoch_ID is not None:
                             if sat_num < 4:
                                 print("Warning: Less than 4 satellites found for time", curr_time)
                                 conn.rollback()
                                 cursor.execute("""
-                                    DELETE FROM Snapshots
-                                    WHERE Snapshot_ID = ?
-                                """, (snapshot_ID,))
+                                    DELETE FROM Epochs
+                                    WHERE Epoch_ID = ?
+                                """, (epoch_ID,))
                             conn.commit()
 
                         cursor.execute("BEGIN TRANSACTION")
                         curr_time = time_value
                         sat_num = 0
-                        snapshot_ID = snapshot_time_sync.get(curr_time, -1)
-                        if snapshot_ID == -1:
+                        epoch_ID = epoch_time_sync.get(curr_time, -1)
+                        if epoch_ID == -1:
                             print("Warning, pseudorange measurement found for time", curr_time, "with no associated ground truth")
                             # Rollback the begun transaction to keep DB consistent
                             conn.rollback()
-                            snapshot_ID = None
+                            epoch_ID = None
                             mc_sample_id = None
                             continue
                         else:
                             cursor.execute("""
-                                INSERT INTO MC_Samples (Snapshot_ID, MC_Run_ID)
+                                INSERT INTO MC_Samples (Epoch_ID, MC_Run_ID)
                                 VALUES (?, ?)
-                            """, (snapshot_ID, 1))
+                            """, (epoch_ID, 1))
                             mc_sample_id = cursor.lastrowid
 
                     # Add satellite location
                     cursor.execute("""
-                        INSERT INTO Satellite_Locations (Snapshot_ID, Satellite_num, Loc_X, Loc_Y, Loc_Z)
+                        INSERT INTO Satellite_Locations (Epoch_ID, Satellite_num, Loc_X, Loc_Y, Loc_Z)
                         VALUES (?, ?, ?, ?, ?)
-                    """, (snapshot_ID, sat_num, sat_x, sat_y, sat_z))
+                    """, (epoch_ID, sat_num, sat_x, sat_y, sat_z))
 
                     # Add measurement
                     cursor.execute("""
@@ -746,19 +752,19 @@ def insert_real_data(conn: sqlite3.Connection,
 
                     sat_num += 1
 
-        # Final check for last snapshot
-        if sat_num < 4 and snapshot_ID is not None:
+        # Final check for last epoch
+        if sat_num < 4 and epoch_ID is not None:
             print("Warning: Less than 4 satellites found for time", curr_time)
             conn.rollback()
             cursor.execute("""
-                DELETE FROM Snapshots
-                WHERE Snapshot_ID = ?
-            """, (snapshot_ID,))
+                DELETE FROM Epochs
+                WHERE Epoch_ID = ?
+            """, (epoch_ID,))
         conn.commit()
         print(f"{dataset_name} data successfully added to database.")
-        cursor.execute("SELECT COUNT(*) FROM Snapshots")
+        cursor.execute("SELECT COUNT(*) FROM Epochs")
         count = cursor.fetchone()[0]
-        print(f"Total snapshots in database: {count}")
+        print(f"Total epochs in database: {count}")
         return True
 
     except sqlite3.IntegrityError as e:
@@ -776,11 +782,11 @@ if __name__ == "__main__":
     dataset_name = 'Chemnitz'
     conn = sqlite3.connect(db_name)
     # Run the unit test for L2 and pseudorange data 
-    sample_ids = get_snapshot_ids(conn, dataset_name=dataset_name)
+    sample_ids = get_epoch_ids(conn, dataset_name=dataset_name)
     
 
     try:
-        data = get_snapshot_data(conn, list([5]))[0] # To pick a random one
+        data = get_epoch_data(conn, list([5]))[0] # To pick a random one
     except Exception as e:
         print(f"Nothing retrieved from database: {e}")
     else:

@@ -43,12 +43,12 @@ if __name__ == "__main__":
         new_mc_run_id = True
         old_mc_run_id = 3  
         if new_mc_run_id:
-            mc_description = "MC simulation: three outliers"
+            mc_description = "MC simulation: four outliers"
             noise_std_dev = 5.  # meters
             outlier_set_num = True
             outlier_fraction = 0.0  # 5% outliers 
             outlier_sd = 100.0  # meters
-            num_outliers = 3
+            num_outliers = 4
             mc_params = {
                 "simulated": True,
                 "noise_std_dev": noise_std_dev,
@@ -81,40 +81,40 @@ if __name__ == "__main__":
                 (not outlier_set_num and outlier_fraction == -1): 
                 raise ValueError(f"Invalid Monte Carlo parameters in MC_run {mc_run_id}.")
         ## Generate Monte Carlo samples
-        possible_snapshot_ids = mdu.get_snapshot_ids(conn)
-        selected_snapshot_ids = []
-        snapshot_data = []
+        possible_epoch_ids = mdu.get_epoch_ids(conn)
+        selected_epoch_ids = []
+        epoch_data = []
         if num_outliers != -1:
             num_satellites_needed = 5+num_outliers 
         else:
-            num_sattelites_needed = calculate_required_samples(outlier_fraction, confidence = 1-.01/samples)
+            num_satellites_needed = calculate_required_samples(outlier_fraction, confidence = 1-.01/samples)
             # 1- .1/samples means it should work 99 out of 100 times for this number of samples, I think...
             if num_satellites_needed > 9:
                 print("Warning, need lots of satellites (>9).  Do you really want this outlier precentage?")
 
-        while len(selected_snapshot_ids) < samples:
-            # Have a long list of snapshots.  Now to randomly select from them
-            new_selected_snapshot_ids = np.random.choice(
-                possible_snapshot_ids, size=samples-len(selected_snapshot_ids), replace=True
+        while len(selected_epoch_ids) < samples:
+            # Have a long list of epochs.  Now to randomly select from them
+            new_selected_epoch_ids = np.random.choice(
+                possible_epoch_ids, size=samples-len(selected_epoch_ids), replace=True
             )
             # sqlite doesn't like np.int64 types, so convert to native Python int
-            new_selected_snapshot_ids = [int(sid) for sid in new_selected_snapshot_ids]
+            new_selected_epoch_ids = [int(sid) for sid in new_selected_epoch_ids]
             # Now to get the data needed to generate measurements
-            new_snapshot_data = mdu.get_snapshot_data(conn, new_selected_snapshot_ids)
+            new_epoch_data = mdu.get_epoch_data(conn, new_selected_epoch_ids)
             # Before adding to the list, ensure the number of satellites is sufficient
-            trimmed_snapshot_ids, trimmed_snapshot_data = zip(*[
-                (sid, sd) for sid, sd in zip(new_selected_snapshot_ids, new_snapshot_data)
+            trimmed_epoch_ids, trimmed_epoch_data = zip(*[
+                (sid, sd) for sid, sd in zip(new_selected_epoch_ids, new_epoch_data)
                 if len(sd[1]) >= num_satellites_needed
             ])
-            selected_snapshot_ids.extend(trimmed_snapshot_ids)
-            snapshot_data.extend(trimmed_snapshot_data)
+            selected_epoch_ids.extend(trimmed_epoch_ids)
+            epoch_data.extend(trimmed_epoch_data)
         # Compute noiseless pseudoranges for each sample
-        noiseless_data = cu.compute_list_snapshot_pseudoranges(snapshot_data)
-        to_database_list = [None] * len(selected_snapshot_ids)
+        noiseless_data = cu.compute_list_epoch_pseudoranges(epoch_data)
+        to_database_list = [None] * len(selected_epoch_ids)
         # Take each sample and add noise/outliers to generate measurements
         count = 0
-        for i in range(len(selected_snapshot_ids)):
-            snapshot_id = selected_snapshot_ids[i]
+        for i in range(len(selected_epoch_ids)):
+            epoch_id = selected_epoch_ids[i]
             noiseless_pseudoranges = noiseless_data[i]
             if outlier_set_num:
                 choose_outliers = np.random.choice(len(noiseless_pseudoranges), size=num_outliers, replace=False)
@@ -126,7 +126,7 @@ if __name__ == "__main__":
             noise[outliers] = np.random.normal(0, outlier_sd, size=np.sum(outliers))
             noisy_pseudoranges = noiseless_pseudoranges + noise
             # Store the generated measurements in the database
-            to_database_list[i] = ({'Snapshot_ID': snapshot_id,
+            to_database_list[i] = ({'Epoch_ID': epoch_id,
                                     'pseudoranges': noisy_pseudoranges,
                                     'is_outlier': outliers})
         print(f"Generated {len(to_database_list)} Monte Carlo samples.")

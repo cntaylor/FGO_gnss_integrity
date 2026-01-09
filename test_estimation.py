@@ -4,7 +4,7 @@ import numpy as np
 import comp_utils as cu
 import r3f
 from FG_estimation import single_epoch_fgo
-from ARAIM_estimation import single_epoch_ARAIM, init_ARAIM
+from ARAIM_estimation import epoch_ARAIM, init_ARAIM
 import matplotlib.pyplot as plt
 import pickle
 
@@ -30,9 +30,9 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
     try:
         # get_measurements returns a list of Nx4 NumPy arrays
         # each entry in the numpy array has [pseudorange, sat_X, sat_Y, sat_Z]
-        measurements_list = mdu.get_mc_samples_measurements(conn, to_process) 
+        measurements_list = mdu.get_mc_sample_measurements(conn, to_process) 
         
-        # get_MC_samples_truth returns a list of 3-element NumPy arrays
+        # get_mc_sample_truths returns a list of 3-element NumPy arrays
         truth_list = mdu.get_mc_sample_truths(conn, to_process)
         
         # Sanity Check: Ensure the lists are the same length
@@ -49,6 +49,8 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
 
     # 3. Run Estimation and Store Results
     init_ARAIM(test_params)
+    print("Done with init_ARAIM")
+    # Create data structures to store results  (init lists so it doesn't take so long to run)
     results = {method: [] for method in methods}
     results["truth"] = [truth_list] # All other methods have a list of multiple entries.  This makes
                                     # truth look more like the others (easier to plot among other things)
@@ -72,6 +74,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
             results[method].append([None] * len(measurements_list)) # covariance
             results[method].append(np.zeros(len(measurements_list),dtype=int)) # num_iterations
             
+    # Actually run the results
 
     for i,measurements_array in enumerate(measurements_list):
         l2_est_loc = cu.estimate_l2_location(measurements_array)
@@ -85,7 +88,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
                 results[method][0][i], _, \
                     results[method][2][i], results[method][3][i], \
                     results[method][4][i] = \
-                    single_epoch_ARAIM(measurements_array)
+                    epoch_ARAIM(measurements_array)
             else:
                 print("Running method:", method)
                 tmp_params = test_params.copy()
@@ -175,27 +178,6 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
         ax1.axis('equal')
         plt.show()
 
-def run_all_real_results(conn: sqlite3.Connection, test_params: dict, list_methods: list) -> None:
-    run_id = 1
-    test_params["base_sigma"] = 14.4
-    dataset_names = mdu.get_dataset_names(conn)
-    pass_list = []
-    fail_list = []
-    for dataset in dataset_names:
-        print("Running for dataset:", dataset)
-        try:
-            validate_estimation(conn, run_id, dataset, test_params, list_methods,
-                            results_file=dataset+"_results.pkl",
-                            errors_file=dataset+"_errors.pkl",
-                            plot_res=False)
-            pass_list.append(dataset)
-        except:
-            print("Failed for dataset:", dataset)
-            fail_list.append(dataset)
-
-    print("Passed:", pass_list)
-    print("Failed:", fail_list)
-
 if __name__ == '__main__':
     import meas_db_utils as mdu
     import sqlite3
@@ -208,13 +190,11 @@ if __name__ == '__main__':
         # The parameters requested by the user:
         # run_id: 
         # - 1 = real data
-        # - 2 = no outliers, no noise (for debugging)
-        # - 3 = no outliers
-        # - 4 = one outlier
-        # - 5 = two outliers
-        # - 6 = three outliers (breaks)
-        # - 7 = four outliers
-        # - 8 = three outliers, w/ min num satellites
+        # - 2 = no outliers
+        # - 3 = one outlier
+        # - 4 = two outliers
+        # - 5 = three outliers
+        # - 6 = four outliers
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
@@ -237,12 +217,10 @@ if __name__ == '__main__':
         
         sim = True # Basically a way for me to "less manually" run the things that need to be run
         if sim:
-            # sim_run_ids  = [ 3, 4, 5, 7]
+            # sim_run_ids  = [ 2, 3, 4, 6]
             # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
-            sim_run_ids = [8]
-            sim_filenames = ["ThreeOutliers"]
-            # sim_run_ids = [4]
-            # sim_filenames = ["OneOutlier_test"]
+            sim_run_ids = [6]
+            sim_filenames = ["FourOutliers"]
             sim_datasets= [None] * len(sim_filenames)
 
             test_params["base_sigma"] = 5.0 # For simulated data...  Comment out for real data!

@@ -157,10 +157,10 @@ def get_gnc_rcf_weights(residuals, params, theta):
     else:
         raise ValueError(f"Unknown RCF '{rcf}'. Supported: Huber, Cauchy, GemanMcClure, trunc_Gauss")
     
-def snapshot_fgo(measurements, params = default_params):
+def single_epoch_fgo(measurements, params = default_params):
     """
     Take in an array of measurements (Nx4 numpy array with columns: pseudorange, sat_X, sat_Y, sat_Z)
-    and perform the FGO snapshot estimation.  
+    and perform the FGO epoch estimation.  
 
     Returns: tuple containing
         est_location: Estimated location (X, Y, Z) as a numpy array
@@ -312,8 +312,8 @@ def snapshot_fgo(measurements, params = default_params):
 
 #     # Retrieve all the measurements and truth data for these samples at once to minimize DB calls
 #     try:
-#         measurements = get_MC_samples_meas(cursor, sample_ids)
-#         truths = get_MC_samples_truth(cursor, sample_ids)
+#         measurements = get_MC_sample_measurements(cursor, sample_ids)
+#         truths = get_MC_sample_truths(cursor, sample_ids)
 #     except Exception as e:
 #         print(f"Error occurred while retrieving measurements or truths: {e}")
 #         return
@@ -325,7 +325,7 @@ def snapshot_fgo(measurements, params = default_params):
 #         truth = truths[i]
 
 #         # Run the L2 estimation
-#         est_location, time_offset = snapshot_fgo(meas_array)
+#         est_location, time_offset = epoch_fgo(meas_array)
 
 #         # Here you would typically store the results back into the database
 #         # For this example, we'll just print them
