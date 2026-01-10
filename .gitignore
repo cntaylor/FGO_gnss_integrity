@@ -9,3 +9,4 @@ SubmissionResults/
 *.db
 !meas_data.db
 uv.lock
+*.pkl

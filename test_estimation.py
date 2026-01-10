@@ -50,7 +50,8 @@ def single_epoch_results(args):
 def validate_estimation(conn, run_id, dataset_name, test_params, methods,
                         results_file = "results.pkl",
                         errors_file = "errors.pkl",
-                        plot_res = True):
+                        plot_res = True, 
+                        run_parallel = True):
     """
     Test out different techniques compare it against L2 and truth
     """
@@ -113,7 +114,6 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
             results[method].append(np.zeros(len(measurements_list),dtype=int)) # num_iterations
             
     # Actually run the results
-    run_parallel = True
     if run_parallel:
         tasks = [(i, measurements_array, methods, test_params) for i,measurements_array in enumerate(measurements_list)]
         with Pool(initializer=init_ARAIM, initargs=(test_params,)) as pool:
@@ -222,6 +222,7 @@ if __name__ == '__main__':
         # - 4 = two outliers
         # - 5 = three outliers
         # - 6 = four outliers
+        # - 7-11 == big (10k) of 0-4 outliers
         test_params = {
             "rcf" : "Cauchy",  # Robust cost function
             "base_sigma" : 14.4,  # Base measurement noise standard deviation (meters)
@@ -244,11 +245,13 @@ if __name__ == '__main__':
         
         sim = True # Basically a way for me to "less manually" run the things that need to be run
         if sim:
-            # sim_run_ids  = [ 2, 3, 4, 6]
-            # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "FourOutliers"]
-            sim_run_ids = [6]
-            sim_filenames = ["FourOutliers_parallel"]
-            sim_datasets= [None] * len(sim_filenames)
+            # sim_run_ids  = [ 2, 3, 4, 5, 6]
+            # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "ThreeOutliers", "FourOutliers"]
+            sim_run_ids  = [ 7, 8, 9, 10, 11]
+            sim_filenames = ["Big_NoOutliers", "Big_OneOutlier", "Big_TwoOutliers", "Big_ThreeOutliers", "Big_FourOutliers"]
+
+            # sim_run_ids = [2]
+            # sim_filenames = ["NoOutliers"]
 
             test_params["base_sigma"] = 5.0 # For simulated data...  Comment out for real data!
             for run_id, filename in zip(sim_run_ids, sim_filenames):
@@ -256,11 +259,11 @@ if __name__ == '__main__':
                                     methods_compare,\
                                     results_file = filename+"_results.pkl",\
                                     errors_file = filename+"_errors.pkl", \
-                                    plot_res = False)
+                                    plot_res = False, run_parallel=True)
         else:
             run_id = 1
             test_params["base_sigma"] = 14.4
-            dataset_names = ["UrbanNav_Harsh"] #mdu.get_dataset_names(conn) # -- runs all the datasets at once
+            dataset_names = mdu.get_dataset_names(conn) # -- runs all the datasets at once
             pass_list = []
             fail_list = []
             for dataset in dataset_names:
@@ -269,7 +272,7 @@ if __name__ == '__main__':
                     validate_estimation(conn, run_id, dataset, test_params, methods_compare,
                                     results_file=dataset+"_results.pkl",
                                     errors_file=dataset+"_errors.pkl",
-                                    plot_res=False)
+                                    plot_res=False, run_parallel=True)
                     pass_list.append(dataset)
                 except:
                     print("Failed for dataset:", dataset)
