@@ -396,7 +396,8 @@ class MultiHypothesisSolutionSeperation():
 					pFaultMode = pFaultMode *self._pSats[ind] 
 				else: # otherwise, it is a constellation failure
 					ind = find( self._constellationList, lambda x: x == event )[0]
-					pFaultMode = pFaultMode * self._pConstellation[ind]
+					# CT:  not considering constellation failure when only using one constellation...
+					# pFaultMode = pFaultMode * self._pConstellation[ind]
 
 		return pFaultMode, eventsNotInMode
 
