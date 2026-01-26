@@ -1,4 +1,6 @@
-# Short overview
+This code was used to create [this paper](visualizations/RAIM_and_RCF_comparison.pdf) that was published in the Institute of Navigation's ITM 2026 conference.  The presentation slides are [here](visualizations/ION_ITM_presentation.pdf), and a video recording of the presentation is [here](https://vimeo.com/1158474111?share=copy).
+
+# Short code overview
 If you want to use this code to generate results, you basically follow 4 steps (the first one is optional).
 1. Create a database with epochs in it.  Or, just use the `meas_data.db` file that is part of the repository (using `git lfs` BTW, which may require some extra steps for you to get it onto your machine)
 2. Create simulation runs using something like `mc_create_example.py`.  Keep track of which "run" you have made.  Each "run" is supposed to be different probabilities, outlier characteristics, etc.
