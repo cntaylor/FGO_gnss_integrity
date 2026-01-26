@@ -48,14 +48,16 @@ if __name__ == "__main__":
             outlier_set_num = True
             outlier_fraction = 0.0  # 5% outliers 
             outlier_sd = 100.0  # meters
-            num_outliers = 4
+            num_outliers = 2
+            gross_outliers = True
             mc_params = {
                 "simulated": True,
                 "noise_std_dev": noise_std_dev,
                 "set_num_outliers": outlier_set_num,
                 "num_outliers": num_outliers,
                 "outlier_fraction": outlier_fraction, # if set_num_outliers is False...
-                "outlier_sd": outlier_sd
+                "outlier_sd": outlier_sd,
+                "outliers_gross": gross_outliers
             }
             # Create a new Monte Carlo run entry
             cursor.execute("""
@@ -123,7 +125,14 @@ if __name__ == "__main__":
             else:
                 outliers = np.random.rand(len(noiseless_pseudoranges)) < outlier_fraction
             noise = np.random.normal(0, noise_std_dev, size=len(noiseless_pseudoranges))
-            noise[outliers] = np.random.normal(0, outlier_sd, size=np.sum(outliers))
+            # Add outliers
+            if gross_outliers:
+                noise_signs = np.random.choice([-1, 1], size=np.sum(outliers))
+                noise[outliers] = outlier_sd * noise_signs
+            else:    
+                # Regular outlier adding
+                noise[outliers] = np.random.normal(0, outlier_sd, size=np.sum(outliers))
+
             noisy_pseudoranges = noiseless_pseudoranges + noise
             # Store the generated measurements in the database
             to_database_list[i] = ({'Epoch_ID': epoch_id,
