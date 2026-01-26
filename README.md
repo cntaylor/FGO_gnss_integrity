@@ -18,6 +18,7 @@ To process the real data, I do _not_ use the defaults for SS-RAIM.  Among other 
 
 ## Standard Deviation of Pseudoranges
 For reference, this is what we computed the sigma to be on the pseudo-ranges:
+```
 'Chemnitz': 16.31049057163418, 
 'UrbanNav_Deep': 10.490736627831403, 
 'UrbanNav_Harsh': 17.156413363268225, 
@@ -30,5 +31,6 @@ For reference, this is what we computed the sigma to be on the pseudo-ranges:
 'Berlin_Potsdamer': 22.42617181442883, 
 
 'combined': 14.428315616394636
+```
 
 On a couple of datasets, I compared the performance using 14.4 vs. the standard deviation for that specific dataset, and it did not seem to make a significant difference, so I just use 14.4m throughout the paper.
