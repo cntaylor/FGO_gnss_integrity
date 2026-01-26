@@ -107,8 +107,9 @@ if __name__ == '__main__':
         # - 4 = two outliers
         # - 5 = three outliers
         # - 6 = four outliers
-    run_id = 3
-    base_name = 'OneOutlier' # Should be the name of the file and, if real data, the DATASET
+        # - 7->11, Big outliers (10,000 samples)
+    run_id = 9
+    base_name = 'Big_TwoOutliers' # Should be the name of the file and, if real data, the DATASET
     results_file = base_name + '_results.pkl'
     errors_file = base_name + '_errors.pkl'
     results, errors = get_errors(results_file, errors_file)
@@ -136,10 +137,18 @@ if __name__ == '__main__':
             errors_3d_enu[key][i] = r3f.ecef_to_tangent(results[key][0][i],true_positions[i], ned=False)
     # And compute the chi-squared value for each error
     chi_sq = {}
+    vpl_valid = 0
+    hpl_valud = 0
     for key in errors_3d_enu.keys():
-        if key == "ARAIM" or key == "L2": # L2 should work when data is rerun... test_estimation has been modified to return a covariance for L2
+        if key == "ARAIM": 
+            for i in range(len(errors_3d_enu[key])):
+                hpl,vpl = results[key][3][i]
+                vert_error = abs(errors_3d_enu[key][i][2])
+                horz_error = errors_3d_enu[key][i][0]**2 + errors_3d_enu[key][i][1]**2
+                vpl_valid +=1 if vert_error <= vpl
+                hpl_valid +=1 if horz_error <= hpl
+
             continue
-        chi_sq[key] = np.zeros(len(errors_3d_enu[key]))
         for i in range(len(errors_3d_enu[key])):
             chi_sq[key][i] = errors_3d_enu[key][i] @ np.linalg.inv(results[key][3][i][:3,:3]) @ errors_3d_enu[key][i]
     
@@ -167,25 +176,14 @@ if __name__ == '__main__':
                 runs_per_set[key].append(np.nan)
 
     # To start, let's print out computational information
+    print(f"---------For Dataset {base_name}------------")
     print ("Average number of lstsq solves...")
     for key in results.keys():
         if key == "L2" or key == 'truth':
             continue
-        # if key == "ARAIM":
-        #     if simulated_data:
-        #         num_sats = [len(sat_outliers) for sat_outliers in true_outliers]
-        #     else:
-        #         epoch_ids = mdu.get_mc_sample_ids(conn, 1, dataset_name=base_name)
-        #         meas_per_epoch = mdu.get_mc_sample_measurements(conn, epoch_ids)
-        #         num_sats = np.zeros(len(epoch_ids))
-        #         for i,meas in enumerate(meas_per_epoch):
-        #             num_sats[i] = len(meas)
-        #     avg_solves = np.mean(num_sats)*2
-        #     print(f'{key:<18}: {avg_solves} (best estimate)')
-        # else:
-        print('key is', key)
         avg_solves = np.mean(results[key][4])
         print(f'{key:<18}: {avg_solves}')
+
     ## Did this test and it really didn't show any difference between what type of sets, so not printing anymore
     # print("\nRuns required broken out by set")
     # print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
@@ -205,24 +203,25 @@ if __name__ == '__main__':
         print(f"  {key:<17} :   Average: {np.mean(errors[key]):7.3f} meters,",\
               f" Std Dev: {np.std(errors[key]):7.3f} meters,",
               f" Max: {np.max(errors[key]):7.3f} meters")
-
+    print() # Add a line
 
     print("Outlier groups and the average error in each group")
     print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
-    print('-'*85)
+    print('-'*90)
     sorted_keys = sorted(set_comparisons.keys(), key=lambda x: (x.endswith('_truth'), x))
     for key in sorted_keys:
-        print('{:<25}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}'.format(key, \
+        print('{:<25}{:<6}{:<10.3}{:<6}{:<10.3}{:<6}{:<10.3}{:<6}{:<10.3}'.format(key, \
                                                                                   len(set_comparisons[key][0]), error_per_set[key][0], 
                                                                                   len(set_comparisons[key][1]), error_per_set[key][1],
                                                                                   len(set_comparisons[key][2]), error_per_set[key][2],
                                                                                   len(set_comparisons[key][3]), error_per_set[key][3]))
     print('\n')
 
-    # Now find out the errors for each set:
+    # Now find out the chi-squared errors for each set:
     chisq_per_set = {}
     for key in set_comparisons.keys():
         if 'ARAIM' in key:
+            # Can't do ARAIM because it doesn't generate a covariance.  Want to test if it exceed protection level?
             continue
         chisq_per_set[key] = []
         # How to access the errors dict
@@ -234,10 +233,11 @@ if __name__ == '__main__':
                 chisq_per_set[key].append(np.nan)
     
 
-    print("\nANEES is...")
+    print("ANEES is...")
     for key in chi_sq.keys():
         print(f'{key:<18}: {np.mean(chi_sq[key])}')
     print('\n')
+
     print("Outlier groups and the average chi squared in each group")
     print('{:<25}{:<15}{:<15}{:<15}{:<15}'.format('key', 'same', 'subset', 'superset', 'neither'))
     print('-'*85)
@@ -245,7 +245,7 @@ if __name__ == '__main__':
     for key in sorted_keys:
         if 'ARAIM' in key:
             continue
-        print('{:<25}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}{:<5}{:<10.3}'.format(key, \
+        print('{:<25}{:<6}{:<10.3}{:<6}{:<10.3}{:<6}{:<10.3}{:<6}{:<10.3}'.format(key, \
                                                                                   len(set_comparisons[key][0]), chisq_per_set[key][0], 
                                                                                   len(set_comparisons[key][1]), chisq_per_set[key][1],
                                                                                   len(set_comparisons[key][2]), chisq_per_set[key][2],

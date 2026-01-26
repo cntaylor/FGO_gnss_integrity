@@ -3,7 +3,7 @@ name = "fgo-gnss-integrity"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 dependencies = [
     "ipython>=9.6.0",
     "matplotlib>=3.10.7",
@@ -11,5 +11,5 @@ dependencies = [
     "pillow>=12.0.0",
     "r3f>=2.1.10",
     "scipy>=1.16.3",
-    "snakeviz>=2.2.2",
+    "tqdm>=4.67.1",
 ]

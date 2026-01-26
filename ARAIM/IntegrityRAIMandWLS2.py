@@ -396,7 +396,8 @@ class MultiHypothesisSolutionSeperation():
 					pFaultMode = pFaultMode *self._pSats[ind] 
 				else: # otherwise, it is a constellation failure
 					ind = find( self._constellationList, lambda x: x == event )[0]
-					pFaultMode = pFaultMode * self._pConstellation[ind]
+					# CT:  not considering constellation failure when only using one constellation...
+					# pFaultMode = pFaultMode * self._pConstellation[ind]
 
 		return pFaultMode, eventsNotInMode
 
@@ -1464,11 +1465,9 @@ class MultiHypothesisSolutionSeperation():
 				#Cacc = np.delete(Cacc, ExcIndex, 0)
 				#Cacc = np.delete(Cacc, ExcIndex, 1)
 		x,y=np.shape(Sk)
+		Cov = ( Sk - S0[0:x,0:y] )*Cacc*( Sk - S0[0:x,0:y] ).T
 		for q in range(3):
-			e = np.zeros(x)
-			e[q] = 1.0
-			e = np.matrix(e)
-			enuCovSS[q] = e*( Sk - S0[0:x,0:y] )*Cacc*( Sk - S0[0:x,0:y] ).T*e.T
+			enuCovSS[q] = Cov[q,q]
 
 
 		
