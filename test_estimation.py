@@ -39,6 +39,12 @@ def single_epoch_results(args):
                 tmp_params["geman_c"] *= 2.0
                 tmp_params["trunc_k"] *= 2.0
                 rcf_method = rcf_method.removesuffix("_double")
+            if "onePointFive" in method: # scale the cut-off values, see the effects.
+                tmp_params["huber_k"] *= 1.5
+                tmp_params["cauchy_c"] *= 1.5
+                tmp_params["geman_c"] *= 1.5
+                tmp_params["trunc_k"] *= 1.5
+                rcf_method = rcf_method.removesuffix("_onePointFive")
             tmp_params["rcf"] = rcf_method
             # actually run the method
             local_results[method] = \
@@ -96,21 +102,21 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
     results["L2"] = []
     results["L2"].append(np.zeros((len(measurements_list),3))) # position estimates
     results["L2"].append(np.zeros(len(measurements_list))) # time offsets
-    results["L2"].append([None] * len(measurements_list)) # outlier info
     results["L2"].append([None] * len(measurements_list)) # covariance
+    results["L2"].append([None] * len(measurements_list)) # outlier info
     for method in methods:
         if method == "ARAIM":
             # ARAIM doesn't return the timing, so it's a special case
             results["ARAIM"].append(np.zeros((len(measurements_list),3)))
             results["ARAIM"].append(None) #timing
-            results["ARAIM"].append([None] * len(measurements_list)) #outlier info
             results["ARAIM"].append([None] * len(measurements_list)) # PLs
+            results["ARAIM"].append([None] * len(measurements_list)) #outlier info
             results["ARAIM"].append(np.zeros(len(measurements_list), dtype=int)) # num_iterations
         else:
             results[method].append(np.zeros((len(measurements_list),3))) # position estimates
             results[method].append(np.zeros(len(measurements_list))) # timing offsets
-            results[method].append([None] * len(measurements_list)) # outlier info
             results[method].append([None] * len(measurements_list)) # covariance
+            results[method].append([None] * len(measurements_list)) # outlier info
             results[method].append(np.zeros(len(measurements_list),dtype=int)) # num_iterations
             
     # Actually run the results
@@ -127,8 +133,10 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
                         if method != "ARAIM" or j != 1:
                             results[method][j][i] = single_result[method][j]
     else:
+        print('Running methods:')
+        print(methods)
         for i,measurements_array in enumerate(measurements_list):
-            print(f"Running epoch {i}")
+            print(f"Running epoch {i} ...................")
             single_results = single_epoch_results((i, measurements_array,methods, test_params))
             for j in range(3):
                 results["L2"][j][i] = single_results["L2"][j]
@@ -158,7 +166,7 @@ def validate_estimation(conn, run_id, dataset_name, test_params, methods,
     print("\n--- STATISTICAL RESULTS ---")
     print(f"Total Error (Magnitude) Statistics:")
     for key in result_errors:
-        print(f"  {key:>17} :   Average: {np.mean(total_errors[key]):7.3f} meters,",\
+        print(f"  {key:>25} :   Average: {np.mean(total_errors[key]):7.3f} meters,",\
               f" Std Dev: {np.std(total_errors[key]):7.3f} meters,",
               f" Max: {np.max(total_errors[key]):7.3f} meters")
 
@@ -241,15 +249,23 @@ if __name__ == '__main__':
             "max_bias" : 0.0
 
         }
-        methods_compare = ["ARAIM","Huber","Cauchy","GemanMcClure","gnc_trunc_Gauss","gnc_GemanMcClure"]
-        
-        sim = True # Basically a way for me to "less manually" run the things that need to be run
+        methods_compare = ["ARAIM",
+            "Huber", 
+            "Cauchy", 
+            "GemanMcClure",
+            "gnc_GemanMcClure",
+            "gnc_trunc_Gauss"
+            ]
+        run_parallel = True # set to False for debugging
+        sim = True # Different data is recorded depending on sim or not
         if sim:
-            # sim_run_ids  = [ 2, 3, 4, 5, 6]
-            # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "ThreeOutliers", "FourOutliers"]
-            sim_run_ids  = [ 7, 8, 9, 10, 11]
-            sim_filenames = ["Big_NoOutliers", "Big_OneOutlier", "Big_TwoOutliers", "Big_ThreeOutliers", "Big_FourOutliers"]
-
+            sim_run_ids  = [ 2, 3, 4, 5, 6]
+            sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "ThreeOutliers", "FourOutliers"]
+            # sim_run_ids  = [ 7, 8, 9, 10, 11]
+            # sim_filenames = ["Big_NoOutliers", "Big_OneOutlier", "Big_TwoOutliers", "Big_ThreeOutliers", "Big_FourOutliers"]
+            # sim_run_ids = [2,3,4,5,6,7,8,9,10,11]
+            # sim_filenames = ["NoOutliers", "OneOutlier", "TwoOutliers", "ThreeOutliers", "FourOutliers",
+            #                  "Big_NoOutliers", "Big_OneOutlier", "Big_TwoOutliers", "Big_ThreeOutliers", "Big_FourOutliers"]
             # sim_run_ids = [2]
             # sim_filenames = ["NoOutliers"]
 
@@ -259,11 +275,11 @@ if __name__ == '__main__':
                                     methods_compare,\
                                     results_file = filename+"_results.pkl",\
                                     errors_file = filename+"_errors.pkl", \
-                                    plot_res = False, run_parallel=True)
+                                    plot_res = False, run_parallel=run_parallel)
         else:
             run_id = 1
             test_params["base_sigma"] = 14.4
-            dataset_names = mdu.get_dataset_names(conn) # -- runs all the datasets at once
+            dataset_names = ['UrbanNav_Medium'] #mdu.get_dataset_names(conn) # -- runs all the datasets at once
             pass_list = []
             fail_list = []
             for dataset in dataset_names:
@@ -272,7 +288,7 @@ if __name__ == '__main__':
                     validate_estimation(conn, run_id, dataset, test_params, methods_compare,
                                     results_file=dataset+"_results.pkl",
                                     errors_file=dataset+"_errors.pkl",
-                                    plot_res=False, run_parallel=True)
+                                    plot_res=False, run_parallel=run_parallel)
                     pass_list.append(dataset)
                 except:
                     print("Failed for dataset:", dataset)

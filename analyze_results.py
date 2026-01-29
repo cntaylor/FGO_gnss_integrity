@@ -39,7 +39,7 @@ def analyze_outliers(results, thresholds, true_outliers=None):
         A dictionary with keys same as results (without ARAIM or L2), each with the 4 lists above.
         Also, may have "key"_truth which compares methods (including ARAIM) with truth (same 4 lists, but truth rather than ARAIM)
     '''
-    araim_outliers = results['ARAIM'][2]
+    araim_outliers = results['ARAIM'][3]
     araim_sets = [set(araim_outliers[i]) for i in range(len(araim_outliers))]
     going_out = {}
 
@@ -49,7 +49,7 @@ def analyze_outliers(results, thresholds, true_outliers=None):
     for key in results.keys():
         if key != 'ARAIM' and key != 'L2' and key != 'truth': 
             # print(key)
-            fgo_outliers = results[key][2] # Third element in the list
+            fgo_outliers = results[key][3] # Fourth element in the list
             assert len(fgo_outliers) == len(araim_outliers), "ARAIM and FGO methods need to have the same number of results"
             # Take the output and convert into sets of outliers, using a threshold
             threshold = thresholds.get(key,.1)
@@ -108,8 +108,8 @@ if __name__ == '__main__':
         # - 5 = three outliers
         # - 6 = four outliers
         # - 7->11, Big outliers (10,000 samples)
-    run_id = 9
-    base_name = 'Big_TwoOutliers' # Should be the name of the file and, if real data, the DATASET
+    run_id = 6
+    base_name = 'FourOutliers' # Should be the name of the file and, if real data, the DATASET
     results_file = base_name + '_results.pkl'
     errors_file = base_name + '_errors.pkl'
     results, errors = get_errors(results_file, errors_file)
@@ -136,21 +136,27 @@ if __name__ == '__main__':
         for i in range(len(results[key][0])):
             errors_3d_enu[key][i] = r3f.ecef_to_tangent(results[key][0][i],true_positions[i], ned=False)
     # And compute the chi-squared value for each error
+    # Initialize the dictionary
     chi_sq = {}
+    for key in errors_3d_enu.keys():
+        if key != "ARAIM":
+            chi_sq[key] = np.full(len(errors_3d_enu[key]), np.nan)
+
+    # And keep track of vpl,hpl results.
     vpl_valid = 0
-    hpl_valud = 0
+    hpl_valid = 0
     for key in errors_3d_enu.keys():
         if key == "ARAIM": 
             for i in range(len(errors_3d_enu[key])):
-                hpl,vpl = results[key][3][i]
+                hpl,vpl = results[key][2][i]
                 vert_error = abs(errors_3d_enu[key][i][2])
                 horz_error = errors_3d_enu[key][i][0]**2 + errors_3d_enu[key][i][1]**2
-                vpl_valid +=1 if vert_error <= vpl
-                hpl_valid +=1 if horz_error <= hpl
+                vpl_valid += 1 if vert_error <= vpl else 0
+                hpl_valid += 1 if horz_error <= hpl else 0
 
             continue
         for i in range(len(errors_3d_enu[key])):
-            chi_sq[key][i] = errors_3d_enu[key][i] @ np.linalg.inv(results[key][3][i][:3,:3]) @ errors_3d_enu[key][i]
+            chi_sq[key][i] = errors_3d_enu[key][i] @ np.linalg.inv(results[key][2][i][:3,:3]) @ errors_3d_enu[key][i]
     
     # Now let's look at the outliers
     thresholds = {'GemanMcClure':.2, 'Huber':.4, 'Cauchy':.5}

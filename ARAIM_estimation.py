@@ -119,4 +119,4 @@ def epoch_ARAIM (measurements: np.ndarray
     HPL, VPL, outlier_info, normals_solved =ARAIM_class.ARAIM(len(new_sat_locs), new_sat_locs,
                       measurements[:,0], 
                       np.arange(1,len(measurements)+1))
-    return ARAIM_class.getUpdatedPos(), None, outlier_info, (HPL, VPL), normals_solved
+    return ARAIM_class.getUpdatedPos(), None, (HPL, VPL), outlier_info, normals_solved
